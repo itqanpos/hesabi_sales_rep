@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RepManagementScreen extends StatefulWidget {
   final String? companyId;
-  const RepManagementScreen({super.key, required this.companyId});
+  const RepManagementScreen({super.key, required this.companyId}); // <--- هذا هو السطر الذي يحدد المتغير
 
   @override
   State<RepManagementScreen> createState() => _RepManagementScreenState();

@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
 import '../../features/home/home_screen.dart';
-import '../../features/pos/presentation/pages/pos_page.dart'; // تم تحديث المسار
+import '../../features/pos/presentation/pages/pos_page.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/login',

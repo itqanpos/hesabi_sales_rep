@@ -26,7 +26,11 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/admin/reps',
-      builder: (context, state) => const RepManagementScreen(),
+      builder: (context, state) {
+        // استلام معرف الشركة المحددة من الشاشة الرئيسية
+        final companyId = state.extra as String?;
+        return RepManagementScreen(companyId: companyId);
+      },
     ),
   ],
 );

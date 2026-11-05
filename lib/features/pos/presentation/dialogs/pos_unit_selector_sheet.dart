@@ -19,14 +19,16 @@ class _PosUnitSelectorSheetState extends State<PosUnitSelectorSheet> {
     super.initState();
     
     _availableUnits = [];
+    // الوحدة الأساسية (تم التعديل لقراءة base_unit_name)
     _availableUnits.add({
       'unit_id': widget.product['default_unit_id'],
-      'name': (widget.product['base_unit'] as Map?)?['name']?.toString() ?? 'قطعة',
+      'name': widget.product['base_unit_name']?.toString() ?? 'قطعة',
       'price': (widget.product['selling_price'] as num?)?.toDouble() ?? 0.0,
       'min_price': (widget.product['min_selling_price'] as num?)?.toDouble(),
       'max_price': (widget.product['max_selling_price'] as num?)?.toDouble(),
     });
 
+    // الوحدات الإضافية (تم التعديل لقراءة unit_name)
     final extras = widget.product['product_units'] as List?;
     if (extras != null) {
       for (var u in extras) {
@@ -36,7 +38,7 @@ class _PosUnitSelectorSheetState extends State<PosUnitSelectorSheet> {
         
         _availableUnits.add({
           'unit_id': u['unit_id'],
-          'name': (u['unit'] as Map?)?['name']?.toString() ?? 'وحدة',
+          'name': u['unit_name']?.toString() ?? 'وحدة',
           'price': explicitPrice ?? (basePrice * factor),
           'min_price': (u['min_selling_price'] as num?)?.toDouble() ?? ((widget.product['min_selling_price'] as num?)?.toDouble() != null ? (widget.product['min_selling_price'] as num).toDouble() * factor : null),
           'max_price': (u['max_selling_price'] as num?)?.toDouble() ?? ((widget.product['max_selling_price'] as num?)?.toDouble() != null ? (widget.product['max_selling_price'] as num).toDouble() * factor : null),

@@ -10,10 +10,9 @@ import '../../data/pos_repository.dart';
 // ألوان Hesabi الرسمية (مطابقة للصور)
 // ============================================================
 class _C {
-  static const primary       = Color(0xFF00897B);  // الأخضر الأساسي (أزرار، أرقام)
-  static const primaryDark   = Color(0xFF00695C);  // الأخضر الداكن
-  static const primaryLight  = Color(0xFFE0F2F1);  // خلفية خضراء فاتحة
-  static const primaryBorder = Color(0xFFB2DFDB);  // حدود خفيفة
+  static const primary       = Color(0xFF00897B);
+  static const primaryDark   = Color(0xFF00695C);
+  static const primaryLight  = Color(0xFFE0F2F1);
   static const success       = Color(0xFF2E7D32);
   static const successLight  = Color(0xFFE8F5E9);
   static const warning       = Color(0xFFE65100);
@@ -62,20 +61,23 @@ class _PosPageState extends State<PosPage> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final results = await Future.wait([
-        _repo.loadProducts(widget.companyId, widget.branchId),
-        _repo.loadCustomers(widget.companyId),
-        Supabase.instance.client
-            .from('companies')
-            .select('name')
-            .eq('id', widget.companyId)
-            .maybeSingle(),
-      ]);
+      final productsF = _repo.loadProducts(widget.companyId, widget.branchId);
+      final customersF = _repo.loadCustomers(widget.companyId);
+      final companyF = Supabase.instance.client
+          .from('companies')
+          .select('name')
+          .eq('id', widget.companyId)
+          .maybeSingle();
+
+      final products = await productsF;
+      final customers = await customersF;
+      final companyRes = await companyF;
+
       if (!mounted) return;
       setState(() {
-        _products = results[0] as List<PosProduct>;
-        _customers = results[1] as List<PosCustomer>;
-        _companyName = ((results[2] as Map?)?['name'] as String?) ?? 'الشركة';
+        _products = products;
+        _customers = customers;
+        _companyName = ((companyRes)?['name'] as String?) ?? 'الشركة';
         _loading = false;
       });
     } catch (e) {
@@ -681,7 +683,6 @@ class _CartLineTileState extends State<_CartLineTile> {
   }
 }
 
-/// الشريط السفلي (مطابق تماماً للصور)
 class _BottomPanel extends StatefulWidget {
   final int itemCount;
   final double discount;
@@ -723,11 +724,9 @@ class _BottomPanelState extends State<_BottomPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ─── الصف 1: الأصناف + الخصم ───
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // الأصناف (يمين)
               Row(mainAxisSize: MainAxisSize.min, children: [
                 Text('الأصناف: ${widget.itemCount}',
                     style: const TextStyle(fontWeight: FontWeight.w600,
@@ -735,7 +734,6 @@ class _BottomPanelState extends State<_BottomPanel> {
                 const SizedBox(width: 6),
                 const Icon(Icons.shopping_bag_outlined, size: 18, color: _C.textSecondary),
               ]),
-              // الخصم (يسار) — نستخدم LTR للترتيب الصحيح
               Row(
                 mainAxisSize: MainAxisSize.min,
                 textDirection: TextDirection.ltr,
@@ -776,7 +774,6 @@ class _BottomPanelState extends State<_BottomPanel> {
             ],
           ),
           const SizedBox(height: 8),
-          // ─── الصف 2: الصافي ───
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -794,7 +791,6 @@ class _BottomPanelState extends State<_BottomPanel> {
             ],
           ),
           const SizedBox(height: 10),
-          // ─── الصف 3: إلغاء (يمين) + دفع (يسار) ───
           Row(children: [
             OutlinedButton.icon(
               onPressed: widget.onCancel,
@@ -1074,7 +1070,7 @@ class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
 }
 
 // ============================================================
-// Payment Sheet (مطابق للصورة)
+// Payment Sheet
 // ============================================================
 class _PaymentSheet extends StatefulWidget {
   final PosRepository repository;
@@ -1203,7 +1199,6 @@ class _PaymentSheetState extends State<_PaymentSheet> {
               const SizedBox(height: 14),
               _buildTotalCard(),
               const SizedBox(height: 16),
-              // SegmentedButton مطابق للصورة
               Container(
                 height: 46,
                 decoration: BoxDecoration(
@@ -1223,8 +1218,8 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                               right: Radius.zero, left: Radius.circular(24)),
                         ),
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(!_isCredit ? Icons.check : Icons.check,
-                              size: 18, color: !_isCredit ? _C.primaryDark : _C.textSecondary),
+                          Icon(Icons.check, size: 18,
+                              color: !_isCredit ? _C.primaryDark : _C.textSecondary),
                           const SizedBox(width: 6),
                           Text('دفع', style: TextStyle(
                               fontWeight: FontWeight.w700,
@@ -1276,7 +1271,6 @@ class _PaymentSheetState extends State<_PaymentSheet> {
               ],
               const SizedBox(height: 16),
             ])),
-            // زر إتمام البيع
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
               child: SizedBox(width: double.infinity, height: 54, child: FilledButton.icon(
@@ -1345,7 +1339,6 @@ class _PaymentSheetState extends State<_PaymentSheet> {
           decoration: BoxDecoration(color: _C.surfaceGray,
               borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
-            // Dropdown طريقة الدفع
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
@@ -1411,7 +1404,6 @@ class _PaymentSheetState extends State<_PaymentSheet> {
             style: TextStyle(color: _C.primary, fontWeight: FontWeight.w600, fontSize: 13)),
       ),
       const SizedBox(height: 8),
-      // شريط الحالة
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -1473,7 +1465,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
 }
 
 // ============================================================
-// Success Dialog (مطابق لصورة "تم البيع بنجاح")
+// Success Dialog
 // ============================================================
 class _SuccessDialog extends StatelessWidget {
   final String companyName;
@@ -1562,7 +1554,7 @@ class _SuccessDialog extends StatelessWidget {
 }
 
 // ============================================================
-// Receipt Preview (مطابق لصورة "معاينة الإيصال")
+// Receipt Dialog
 // ============================================================
 class _ReceiptDialog extends StatelessWidget {
   final String companyName;
@@ -1590,7 +1582,6 @@ class _ReceiptDialog extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // Header
           Row(children: [
             IconButton(
               icon: const Icon(Icons.close),
@@ -1604,14 +1595,12 @@ class _ReceiptDialog extends StatelessWidget {
             const Spacer(),
           ]),
           const SizedBox(height: 8),
-          // Zoom controls
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Icon(Icons.zoom_in, color: _C.textSecondary, size: 20),
+            const Icon(Icons.zoom_in, color: _C.textSecondary, size: 20),
             const Text('100%', style: TextStyle(fontSize: 12, color: _C.textSecondary)),
-            Icon(Icons.zoom_out, color: _C.textSecondary, size: 20),
+            const Icon(Icons.zoom_out, color: _C.textSecondary, size: 20),
           ]),
           const SizedBox(height: 8),
-          // Receipt content
           Flexible(
             child: Container(
               padding: const EdgeInsets.all(14),
@@ -1639,7 +1628,6 @@ class _ReceiptDialog extends StatelessWidget {
                   _infoRow('التاريخ:', '$dateStr — ${now.hour}:${now.minute.toString().padLeft(2, '0')}'),
                   _infoRow('الكاشير:', customer?.name ?? 'عميل نقدي'),
                   const Divider(height: 16),
-                  // Items table
                   Container(
                     decoration: BoxDecoration(border: Border.all(color: _C.text)),
                     child: Column(children: [
@@ -1675,7 +1663,7 @@ class _ReceiptDialog extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 5),
                         child: Row(children: [
                           const Expanded(flex: 7, child: _T('المجموع الفرعي', bold: true)),
-                          Expanded(flex: 2, child: _T(subtotal.toStringAsFixed(0), bold: true)),
+                          Expanded(flex: 2, child: _T('', bold: true)),
                         ]),
                       ),
                     ]),

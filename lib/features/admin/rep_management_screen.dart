@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RepManagementScreen extends StatefulWidget {
-  const RepManagementScreen({super.key});
+  final String? companyId;
+  const RepManagementScreen({super.key, required this.companyId});
 
   @override
   State<RepManagementScreen> createState() => _RepManagementScreenState();
@@ -17,39 +18,14 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    try {
-      final client = Supabase.instance.client;
-      final user = client.auth.currentUser;
-      if (user == null) return;
-
-      final members = await client
-          .from('company_members')
-          .select('company_id')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .limit(1);
-
-      if (members.isEmpty) {
-        setState(() {
-          _error = 'لا توجد شركة نشطة';
-          _loading = false;
-        });
-        return;
-      }
-
-      _companyId = members.first['company_id'] as String;
-      await _loadCandidates();
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+    _companyId = widget.companyId;
+    if (_companyId == null) {
+      setState(() {
+        _error = 'لم يتم تحديد الشركة، يرجى العودة للرئيسية وإعادة المحاولة.';
+        _loading = false;
+      });
+    } else {
+      _loadCandidates();
     }
   }
 
@@ -124,10 +100,11 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _init,
-                child: const Text('إعادة المحاولة'),
-              ),
+              if (_companyId != null)
+                ElevatedButton(
+                  onPressed: _loadCandidates,
+                  child: const Text('إعادة المحاولة'),
+                ),
             ],
           ),
         ),

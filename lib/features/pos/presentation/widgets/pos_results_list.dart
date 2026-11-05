@@ -20,7 +20,8 @@ class PosResultsList extends StatelessWidget {
         final p = products[i];
         final stock = stockMap[p['id']] ?? 0.0;
         final price = (p['selling_price'] as num?)?.toDouble() ?? 0.0;
-        final unitName = (p['base_unit'] as Map?)?['name']?.toString() ?? 'قطعة';
+        // تم تعديل هذا السطر لقراءة اسم الوحدة الأساسية من الحقل الجديد
+        final unitName = p['base_unit_name']?.toString() ?? 'قطعة';
         
         final (bg, fg, lbl) = stock <= 0 
             ? (const Color(0xFFFFEBEE), const Color(0xFFC62828), 'نفد') 

@@ -1,0 +1,23 @@
+{
+  "name": "حسابي - المندوب",
+  "short_name": "حسابي",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#1E88E5",
+  "description": "تطبيق المندوب - حسابي",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/Icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

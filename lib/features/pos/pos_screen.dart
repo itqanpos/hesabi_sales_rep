@@ -48,12 +48,14 @@ class _PosScreenState extends State<PosScreen> {
     try {
       final client = Supabase.instance.client;
 
+      // جلب المنتجات مع الوحدات المرتبطة من جدول units
       final prods = await client
           .from('products')
-          .select('id, name, product_units(id, unit_name, sell_price, min_selling_price, max_selling_price, barcode)')
+          .select('id, name, product_units(id, unit_id, selling_price, min_selling_price, max_selling_price, units(name))')
           .eq('company_id', widget.companyId)
           .eq('is_active', true);
 
+      // جلب المخزون
       final stock = await client
           .from('inventory_balances')
           .select('product_id, quantity_on_hand')
@@ -66,6 +68,7 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
 
+      // جلب العملاء
       final custs = await client
           .from('customers')
           .select('id, name, phone, balance')
@@ -97,17 +100,7 @@ class _PosScreenState extends State<PosScreen> {
         _isSearching = q.isNotEmpty;
         _filteredProducts = _products.where((p) {
           final name = (p['name'] ?? '').toString().toLowerCase();
-          final units = p['product_units'] as List?;
-          bool barcodeMatch = false;
-          if (units != null) {
-            for (var u in units) {
-              if ((u['barcode'] ?? '').toString().toLowerCase().contains(q)) {
-                barcodeMatch = true;
-                break;
-              }
-            }
-          }
-          return name.contains(q) || barcodeMatch;
+          return name.contains(q);
         }).toList();
       });
     });
@@ -194,7 +187,7 @@ class _PosScreenState extends State<PosScreen> {
       child: TextField(
         controller: _searchCtrl, focusNode: _searchFocus,
         decoration: InputDecoration(
-          hintText: 'ابحث بالاسم أو الباركود...',
+          hintText: 'ابحث بالاسم...',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
@@ -224,8 +217,15 @@ class _PosScreenState extends State<PosScreen> {
         final stock = _stockMap[p['id']] ?? 0.0;
         final units = p['product_units'] as List?;
         final defaultUnit = (units != null && units.isNotEmpty) ? units.first : null;
-        final price = (defaultUnit?['sell_price'] as num?)?.toDouble() ?? 0.0;
-        final (bg, fg, lbl) = stock <= 0 ? (Colors.red.shade50, Colors.red, 'نفد') : stock <= 10 ? (Colors.orange.shade50, Colors.orange, '${stock.toInt()} متبقٍ') : (Colors.green.shade50, Colors.green, '${stock.toInt()} متاح');
+        final unitName = (defaultUnit?['units'] as Map?)?['name']?.toString() ?? 'قطعة';
+        final price = (defaultUnit?['selling_price'] as num?)?.toDouble() ?? 0.0;
+        
+        final (bg, fg, lbl) = stock <= 0 
+            ? (Colors.red.shade50, Colors.red, 'نفد') 
+            : stock <= 10 
+                ? (Colors.orange.shade50, Colors.orange, '${stock.toInt()} متبقٍ') 
+                : (Colors.green.shade50, Colors.green, '${stock.toInt()} متاح');
+
         return InkWell(
           onTap: () async {
             final r = await showModalBottomSheet<Map<String, dynamic>>(
@@ -240,7 +240,7 @@ class _PosScreenState extends State<PosScreen> {
               children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(p['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                  if (defaultUnit != null) Text(defaultUnit['unit_name'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(unitName, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ])),
                 Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)), child: Text(lbl, style: TextStyle(fontSize: 10, color: fg))),
                 const SizedBox(width: 8),
@@ -310,12 +310,13 @@ class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
   @override void initState() {
     super.initState();
     final units = widget.product['product_units'] as List;
-    _selectedUnitId = units.first['id'];
+    _selectedUnitId = units.first['unit_id'];
     _qtyCtrl = TextEditingController(text: '1');
-    _priceCtrl = TextEditingController(text: (units.first['sell_price'] ?? 0).toString());
+    _priceCtrl = TextEditingController(text: (units.first['selling_price'] ?? 0).toString());
   }
   @override void dispose() { _qtyCtrl.dispose(); _priceCtrl.dispose(); super.dispose(); }
-  Map<String, dynamic> get _cur => (widget.product['product_units'] as List).firstWhere((u) => u['id'] == _selectedUnitId);
+  Map<String, dynamic> get _cur => (widget.product['product_units'] as List).firstWhere((u) => u['unit_id'] == _selectedUnitId);
+  
   @override Widget build(BuildContext context) {
     final units = widget.product['product_units'] as List;
     final qty = double.tryParse(_qtyCtrl.text) ?? 0;
@@ -326,8 +327,11 @@ class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
         Text(widget.product['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(value: _selectedUnitId, decoration: const InputDecoration(labelText: 'الوحدة', border: OutlineInputBorder()),
-          items: units.map<DropdownMenuItem<String>>((u) => DropdownMenuItem(value: u['id'], child: Text(u['unit_name'] ?? ''))).toList(),
-          onChanged: (v) => setState(() { _selectedUnitId = v; _priceCtrl.text = (_cur['sell_price'] ?? 0).toString(); })),
+          items: units.map<DropdownMenuItem<String>>((u) {
+            final uName = (u['units'] as Map?)?['name']?.toString() ?? 'قطعة';
+            return DropdownMenuItem(value: u['unit_id'], child: Text(uName));
+          }).toList(),
+          onChanged: (v) => setState(() { _selectedUnitId = v; _priceCtrl.text = (_cur['selling_price'] ?? 0).toString(); })),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: TextField(controller: _qtyCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'الكمية', border: OutlineInputBorder()), onChanged: (_) => setState((){}))),
@@ -336,7 +340,14 @@ class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
         ]),
         const SizedBox(height: 16),
         SizedBox(width: double.infinity, height: 50, child: FilledButton(
-          onPressed: qty > 0 ? () => Navigator.pop(context, {'product_id': widget.product['id'], 'product_name': widget.product['name'], 'unit_id': _selectedUnitId, 'unit_name': _cur['unit_name'], 'qty': qty, 'price': price}) : null,
+          onPressed: qty > 0 ? () => Navigator.pop(context, {
+            'product_id': widget.product['id'], 
+            'product_name': widget.product['name'], 
+            'unit_id': _selectedUnitId, 
+            'unit_name': (_cur['units'] as Map?)?['name']?.toString() ?? 'قطعة', 
+            'qty': qty, 
+            'price': price
+          }) : null,
           child: const Text('إضافة إلى السلة'),
         )),
       ]),

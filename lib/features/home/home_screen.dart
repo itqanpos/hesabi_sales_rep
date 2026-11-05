@@ -10,7 +10,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ─── الهوية ───
   String? _userName;
   List<Map<String, dynamic>> _memberships = [];
   String? _selectedCompanyId;
@@ -22,7 +21,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isManager = false;
   bool _isRep = false;
 
-  // ─── KPIs ───
   double _todaySales = 0;
   double _todayCollections = 0;
   int _todayInvoices = 0;
@@ -45,15 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final user = client.auth.currentUser;
       if (user == null) return;
 
-      // 1) اسم المستخدم (full_name من profiles، وإلا نستخدم الإيميل من auth)
-      final profile = await client
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .maybeSingle();
-      _userName = (profile?['full_name'] ?? user.email ?? '') as String;
+      // 1) اسم المستخدم (من بيانات المصادقة مباشرة لتجنب مشاكل جدول profiles)
+      _userName = user.userMetadata?['full_name'] as String? ?? user.email ?? '';
 
-      // 2) العضويات
+      // 2) العضويات (جلب الشركات المرتبط بها)
       final memberships = await client
           .from('company_members')
           .select('company_id, role, companies(name)')

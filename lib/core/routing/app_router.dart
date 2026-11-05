@@ -1,10 +1,11 @@
+import 'package:flutter/material.dart'; // <-- هذا السطر كان ناقصاً
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
 import '../../features/home/home_screen.dart';
-import '../../features/pos/pos_screen.dart'; // <-- تم إضافة هذا السطر
+import '../../features/pos/pos_screen.dart'; // تأكد من وجود هذا الملف
 
 final appRouter = GoRouter(
   initialLocation: '/login',
@@ -32,7 +33,6 @@ final appRouter = GoRouter(
         return RepManagementScreen(companyId: companyId);
       },
     ),
-    // ✅ إضافة مسار نقطة البيع
     GoRoute(
       path: '/pos',
       builder: (context, state) {

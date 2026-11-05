@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -19,7 +18,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedRole;
   String? _repId;
   String? _repBranchId;
-  String? _repWarehouseId;
   String? _repType;
   bool _isManager = false;
   bool _isRep = false;
@@ -41,22 +39,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _bootstrap();
   }
 
-  // ============================================================
-  // تحميل البيانات الأساسية
-  // ============================================================
   Future<void> _bootstrap() async {
     try {
       final client = Supabase.instance.client;
       final user = client.auth.currentUser;
       if (user == null) return;
 
-      // 1) اسم المستخدم
+      // 1) اسم المستخدم (full_name من profiles، وإلا نستخدم الإيميل من auth)
       final profile = await client
           .from('profiles')
-          .select('full_name, email')
+          .select('full_name')
           .eq('id', user.id)
           .maybeSingle();
-      _userName = (profile?['full_name'] ?? profile?['email'] ?? user.email) as String?;
+      _userName = (profile?['full_name'] ?? user.email ?? '') as String;
 
       // 2) العضويات
       final memberships = await client
@@ -90,9 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ============================================================
-  // تحميل سياق الشركة + KPIs
-  // ============================================================
   Future<void> _loadCompanyContext() async {
     if (_selectedCompanyId == null) return;
     setState(() => _loading = true);
@@ -102,13 +94,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null) return;
 
     try {
-      // الصلاحية
       _isManager = ['owner', 'manager', 'admin'].contains(_selectedRole);
 
-      // المندوب
       final reps = await client
           .from('sales_reps')
-          .select('id, branch_id, warehouse_id, rep_type')
+          .select('id, branch_id, rep_type')
           .eq('company_id', _selectedCompanyId!)
           .eq('user_id', user.id)
           .eq('is_active', true)
@@ -118,14 +108,12 @@ class _HomeScreenState extends State<HomeScreen> {
         _isRep = true;
         _repId = reps.first['id'] as String;
         _repBranchId = reps.first['branch_id'] as String?;
-        _repWarehouseId = reps.first['warehouse_id'] as String?;
         _repType = reps.first['rep_type'] as String?;
         await _loadKpis(user.id);
       } else {
         _isRep = false;
         _repId = null;
         _repBranchId = null;
-        _repWarehouseId = null;
         _repType = null;
         _todaySales = 0;
         _todayCollections = 0;
@@ -135,9 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _monthlySales = 0;
       }
 
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -154,32 +140,38 @@ class _HomeScreenState extends State<HomeScreen> {
     final todayStart = DateTime(now.year, now.month, now.day).toUtc();
     final monthStart = DateTime(now.year, now.month, 1).toUtc();
 
-    // 1) فواتير و مبيعات اليوم (لهذا المندوب)
-    final todaySalesRes = await client
-        .from('sales')
-        .select('id, total')
-        .eq('company_id', _selectedCompanyId!)
-        .eq('sales_rep_id', _repId!)
-        .neq('status', 'cancelled')
-        .gte('sale_date', todayStart.toIso8601String());
+    try {
+      final todaySalesRes = await client
+          .from('sales')
+          .select('id, total')
+          .eq('company_id', _selectedCompanyId!)
+          .eq('sales_rep_id', _repId!)
+          .neq('status', 'cancelled')
+          .gte('sale_date', todayStart.toIso8601String());
 
-    final todaySalesList = (todaySalesRes as List).cast<Map<String, dynamic>>();
-    _todayInvoices = todaySalesList.length;
-    _todaySales = todaySalesList.fold<double>(
-      0, (sum, s) => sum + ((s['total'] as num?)?.toDouble() ?? 0));
+      final todaySalesList = (todaySalesRes as List).cast<Map<String, dynamic>>();
+      _todayInvoices = todaySalesList.length;
+      _todaySales = todaySalesList.fold<double>(
+          0, (sum, s) => sum + ((s['total'] as num?)?.toDouble() ?? 0));
+    } catch (_) {
+      _todaySales = 0;
+      _todayInvoices = 0;
+    }
 
-    // 2) مبيعات الشهر الحالي (للهدف)
-    final monthSalesRes = await client
-        .from('sales')
-        .select('total')
-        .eq('company_id', _selectedCompanyId!)
-        .eq('sales_rep_id', _repId!)
-        .neq('status', 'cancelled')
-        .gte('sale_date', monthStart.toIso8601String());
-    _monthlySales = (monthSalesRes as List).fold<double>(
-      0, (sum, s) => sum + ((s['total'] as num?)?.toDouble() ?? 0));
+    try {
+      final monthSalesRes = await client
+          .from('sales')
+          .select('total')
+          .eq('company_id', _selectedCompanyId!)
+          .eq('sales_rep_id', _repId!)
+          .neq('status', 'cancelled')
+          .gte('sale_date', monthStart.toIso8601String());
+      _monthlySales = (monthSalesRes as List).fold<double>(
+          0, (sum, s) => sum + ((s['total'] as num?)?.toDouble() ?? 0));
+    } catch (_) {
+      _monthlySales = 0;
+    }
 
-    // 3) تحصيلات اليوم (التي أنشأها هذا المستخدم)
     try {
       final paymentsRes = await client
           .from('customer_payments')
@@ -187,12 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
           .eq('company_id', _selectedCompanyId!)
           .gte('created_at', todayStart.toIso8601String());
       _todayCollections = (paymentsRes as List).fold<double>(
-        0, (sum, p) => sum + ((p['amount'] as num?)?.toDouble() ?? 0));
+          0, (sum, p) => sum + ((p['amount'] as num?)?.toDouble() ?? 0));
     } catch (_) {
       _todayCollections = 0;
     }
 
-    // 4) عدد العملاء
     try {
       final customersRes = await client
           .from('customers')
@@ -204,7 +195,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _customersCount = 0;
     }
 
-    // 5) هدف الشهر (من جدول reps القديم إن وُجد ربط)
     try {
       final repLink = await client
           .from('sales_reps')
@@ -225,9 +215,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ============================================================
-  // تغيير الشركة
-  // ============================================================
   Future<void> _onCompanyChanged(String? companyId) async {
     if (companyId == null || companyId == _selectedCompanyId) return;
     final m = _memberships.firstWhere(
@@ -242,18 +229,13 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadCompanyContext();
   }
 
-  Future<void> _refresh() async {
-    await _loadCompanyContext();
-  }
+  Future<void> _refresh() async => await _loadCompanyContext();
 
   Future<void> _logout() async {
     await Supabase.instance.client.auth.signOut();
     if (mounted) context.go('/login');
   }
 
-  // ============================================================
-  // الواجهة
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -321,7 +303,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── رأس الشاشة ───
   Widget _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 160,
@@ -336,10 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SnackBar(content: Text('الإشعارات - قيد التطوير')),
           ),
         ),
-        IconButton(
-          icon: const Icon(Icons.logout),
-          onPressed: _logout,
-        ),
+        IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
@@ -386,7 +364,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── مُبدّل الشركات ───
   Widget _buildCompanySwitcher() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -414,18 +391,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── شارات الحالة ───
   Widget _buildStatusRow() {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
         if (_isManager) _buildChip('مدير', Icons.admin_panel_settings, Colors.purple),
-        if (_isRep) _buildChip(
-          _repType == 'custody' ? 'مندوب بعهدة' : 'مندوب بدون عهدة',
-          Icons.badge,
-          Colors.green,
-        ),
+        if (_isRep)
+          _buildChip(
+            _repType == 'custody' ? 'مندوب بعهدة' : 'مندوب بدون عهدة',
+            Icons.badge,
+            Colors.green,
+          ),
         _buildChip('متصل', Icons.wifi, Colors.blue),
       ],
     );
@@ -446,18 +423,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  // ─── شبكة KPIs ───
   Widget _buildKpiGrid() {
     return GridView.count(
       crossAxisCount: 2,
@@ -572,14 +544,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── بطاقة الهدف ───
   Widget _buildTargetCard() {
     final percent = (_monthlySales / _monthlyTarget * 100).clamp(0, 100);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [const Color(0xFF1E88E5).withOpacity(0.08), const Color(0xFF1565C0).withOpacity(0.15)],
+          colors: [
+            const Color(0xFF1E88E5).withOpacity(0.08),
+            const Color(0xFF1565C0).withOpacity(0.15),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -593,10 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const Icon(Icons.flag, color: Color(0xFF1E88E5), size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'هدف الشهر',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
+              const Text('هدف الشهر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               const Spacer(),
               Text(
                 '${percent.toStringAsFixed(0)}%',
@@ -622,14 +593,10 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'مبيعات: ${_monthlySales.toStringAsFixed(0)} ج.م',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-              Text(
-                'الهدف: ${_monthlyTarget.toStringAsFixed(0)} ج.م',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
+              Text('مبيعات: ${_monthlySales.toStringAsFixed(0)} ج.م',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+              Text('الهدف: ${_monthlyTarget.toStringAsFixed(0)} ج.م',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
             ],
           ),
         ],
@@ -637,7 +604,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── عنوان قسم ───
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -652,7 +618,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── شبكة الإجراءات ───
   Widget _buildActionsGrid() {
     final actions = <_ActionItem>[];
 
@@ -729,10 +694,8 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(16),
         ),
         child: const Center(
-          child: Text(
-            'لا توجد إجراءات متاحة لحسابك حالياً',
-            style: TextStyle(color: Colors.grey),
-          ),
+          child: Text('لا توجد إجراءات متاحة لحسابك حالياً',
+              style: TextStyle(color: Colors.grey)),
         ),
       );
     }
@@ -796,7 +759,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── حالة المزامنة ───
   Widget _buildSyncStatus() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -820,14 +782,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'متصل بالإنترنت',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                Text(
-                  'جميع البيانات محدثة',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                Text('متصل بالإنترنت',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text('جميع البيانات محدثة',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
               ],
             ),
           ),
@@ -842,9 +800,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ============================================================
-// نموذج مساعد
-// ============================================================
 class _ActionItem {
   final String title;
   final IconData icon;

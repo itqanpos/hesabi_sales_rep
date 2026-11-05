@@ -10,58 +10,91 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  List<Map<String, dynamic>> _memberships = [];
+  String? _selectedCompanyId;
   bool _isManager = false;
   bool _isRep = false;
-  String? _companyId;
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadContext();
+    _loadMemberships();
   }
 
-  Future<void> _loadContext() async {
+  Future<void> _loadMemberships() async {
     try {
-      final client = Supabase.instance.client;
-      final user = client.auth.currentUser;
+      final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      // جلب أول شركة نشطة للمستخدم
-      final members = await client
+      // جلب كل الشركات التي ينتمي إليها المستخدم
+      final res = await Supabase.instance.client
           .from('company_members')
-          .select('company_id, role, is_active')
+          .select('company_id, role, companies(name)')
           .eq('user_id', user.id)
-          .eq('is_active', true)
-          .limit(1);
+          .eq('is_active', true);
 
-      if (members.isEmpty) {
-        if (mounted) setState(() => _loading = false);
+      if (res.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _error = 'لا توجد شركة نشطة لهذا الحساب';
+            _loading = false;
+          });
+        }
         return;
       }
 
-      final member = members.first;
-      final companyId = member['company_id'] as String;
-      final role = member['role'] as String;
+      if (mounted) {
+        setState(() {
+          _memberships = (res as List).cast<Map<String, dynamic>>();
+          _selectedCompanyId = _memberships.first['company_id'] as String;
+        });
+      }
 
-      // هل المستخدم مندوب نشط؟
-      final reps = await client
+      await _updateContext();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _updateContext() async {
+    if (_selectedCompanyId == null) return;
+    setState(() => _loading = true);
+
+    final user = Supabase.instance.client.auth.currentUser;
+    final member = _memberships.firstWhere(
+      (m) => m['company_id'] == _selectedCompanyId,
+      orElse: () => {},
+    );
+
+    final role = member['role'] as String? ?? 'user';
+    bool isRep = false;
+
+    try {
+      // التحقق هل المستخدم مندوب في هذه الشركة تحديدًا
+      final reps = await Supabase.instance.client
           .from('sales_reps')
           .select('id')
-          .eq('company_id', companyId)
-          .eq('user_id', user.id)
+          .eq('company_id', _selectedCompanyId!)
+          .eq('user_id', user!.id)
           .eq('is_active', true)
           .limit(1);
+      isRep = reps.isNotEmpty;
+    } catch (_) {}
 
-      if (!mounted) return;
+    if (mounted) {
       setState(() {
-        _companyId = companyId;
         _isManager = ['owner', 'manager', 'admin'].contains(role);
-        _isRep = reps.isNotEmpty;
+        _isRep = isRep;
         _loading = false;
+        _error = null;
       });
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -74,6 +107,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadMemberships, child: const Text('إعادة المحاولة')),
+              TextButton(onPressed: _logout, child: const Text('تسجيل الخروج')),
+            ],
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -89,38 +138,65 @@ class _HomeScreenState extends State<HomeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_companyId == null)
-            const Card(
-              color: Colors.orangeAccent,
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('لا توجد شركة نشطة لهذا الحساب'),
+          // قائمة اختيار الشركة
+          if (_memberships.length > 1) ...[
+            DropdownButtonFormField<String>(
+              value: _selectedCompanyId,
+              decoration: const InputDecoration(
+                labelText: 'الشركة النشطة',
+                prefixIcon: Icon(Icons.business),
+                border: OutlineInputBorder(),
               ),
-            )
-          else ...[
-            _StatusCard(
-              title: 'حالة الحساب',
-              isRep: _isRep,
-              isManager: _isManager,
+              items: _memberships.map((m) {
+                final company = m['companies'] as Map<String, dynamic>?;
+                final name = company?['name'] ?? 'شركة غير معروفة';
+                return DropdownMenuItem(
+                  value: m['company_id'] as String,
+                  child: Text(name as String),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _selectedCompanyId = val);
+                  _updateContext();
+                }
+              },
             ),
             const SizedBox(height: 16),
-            if (_isManager)
-              _MenuCard(
-                title: 'إدارة المندوبين',
-                subtitle: 'تعيين أعضاء الشركة كمندوبين',
-                icon: Icons.people,
-                onTap: () => context.push('/admin/reps'),
+          ] else if (_memberships.isNotEmpty) ...[
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.business),
+                title: const Text('الشركة النشطة'),
+                subtitle: Text((_memberships.first['companies'] as Map<String, dynamic>?)?['name'] ?? ''),
               ),
-            if (_isRep)
-              _MenuCard(
-                title: 'نقطة البيع',
-                subtitle: 'سيتم تفعيلها في المرحلة القادمة',
-                icon: Icons.point_of_sale,
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('قيد التطوير')),
-                ),
-              ),
+            ),
+            const SizedBox(height: 16),
           ],
+
+          _StatusCard(
+            title: 'حالة الحساب',
+            isRep: _isRep,
+            isManager: _isManager,
+          ),
+          const SizedBox(height: 16),
+
+          if (_isManager)
+            _MenuCard(
+              title: 'إدارة المندوبين',
+              subtitle: 'تعيين أعضاء الشركة كمندوبين',
+              icon: Icons.people,
+              onTap: () => context.push('/admin/reps', extra: _selectedCompanyId),
+            ),
+          if (_isRep)
+            _MenuCard(
+              title: 'نقطة البيع',
+              subtitle: 'سيتم تفعيلها في المرحلة القادمة',
+              icon: Icons.point_of_sale,
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('قيد التطوير')),
+              ),
+            ),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
 import '../../features/home/home_screen.dart';
+import '../../features/pos/pos_screen.dart'; // <-- تم إضافة هذا السطر
 
 final appRouter = GoRouter(
   initialLocation: '/login',
@@ -27,9 +28,24 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/admin/reps',
       builder: (context, state) {
-        // استلام معرف الشركة المحددة من الشاشة الرئيسية
         final companyId = state.extra as String?;
         return RepManagementScreen(companyId: companyId);
+      },
+    ),
+    // ✅ إضافة مسار نقطة البيع
+    GoRoute(
+      path: '/pos',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(
+            body: Center(child: Text('خطأ: لم يتم تمرير بيانات الشركة والفرع')),
+          );
+        }
+        return PosScreen(
+          companyId: data['companyId'] as String,
+          branchId: data['branchId'] as String,
+        );
       },
     ),
   ],

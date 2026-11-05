@@ -55,3 +55,6 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # زيادة المهلة الزمنية إلى 20 دقيقة (1200000 مللي ثانية) لمنع خطأ Timeout
+          timeout: 1200000

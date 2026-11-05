@@ -6,57 +6,48 @@ import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/pos/presentation/pages/pos_page.dart';
+import '../../features/sales/presentation/pages/sales_history_page.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/login',
   redirect: (context, state) {
     final session = Supabase.instance.client.auth.currentSession;
     final loggingIn = state.matchedLocation == '/login';
-
-    // إذا لم يكن هناك جلسة ولم يكن في صفحة الدخول، انتقل للدخول
     if (session == null && !loggingIn) return '/login';
-    
-    // إذا كان مسجلاً بالفعل وهو في صفحة الدخول، انتقل للرئيسية
     if (session != null && loggingIn) return '/home';
-    
     return null;
   },
   routes: [
-    GoRoute(
-      path: '/login',
-      builder: (context, state) => const LoginScreen(),
-    ),
-    GoRoute(
-      path: '/home',
-      builder: (context, state) => const HomeScreen(),
-    ),
+    GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+    GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
     GoRoute(
       path: '/admin/reps',
-      builder: (context, state) {
-        final companyId = state.extra as String?;
-        return RepManagementScreen(companyId: companyId);
-      },
+      builder: (context, state) => RepManagementScreen(
+          companyId: state.extra as String?),
     ),
     GoRoute(
       path: '/pos',
       builder: (context, state) {
         final data = state.extra as Map<String, dynamic>?;
-        
-        // التحقق من وجود البيانات المطلوبة
-        if (data == null || data['companyId'] == null || data['branchId'] == null) {
-          return const Scaffold(
-            body: Center(
-              child: Text(
-                'خطأ: لم يتم تمرير بيانات الشركة والفرع',
-                style: TextStyle(color: Colors.red, fontSize: 16),
-              ),
-            ),
-          );
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
         }
-        
         return PosPage(
           companyId: data['companyId'] as String,
           branchId: data['branchId'] as String,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/sales',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
+        }
+        return SalesHistoryPage(
+          companyId: data['companyId'] as String,
+          salesRepId: data['salesRepId'] as String,
         );
       },
     ),

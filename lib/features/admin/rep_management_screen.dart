@@ -26,7 +26,6 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
       final user = client.auth.currentUser;
       if (user == null) return;
 
-      // جلب company_id من أول عضوية نشطة
       final members = await client
           .from('company_members')
           .select('company_id')
@@ -147,26 +146,71 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
         itemBuilder: (context, i) {
           final c = _candidates[i];
           final isRep = c['is_already_rep'] == true;
+          final name = (c['full_name'] ?? 'بدون اسم') as String;
+          final email = (c['email'] ?? '') as String;
+          final role = (c['role'] ?? '') as String;
+
           return Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor:
-                    isRep ? Colors.green.shade100 : Colors.grey.shade200,
-                child: Icon(
-                  isRep ? Icons.badge : Icons.person,
-                  color: isRep ? Colors.green.shade800 : Colors.grey.shade700,
-                ),
-              ),
-              title: Text((c['full_name'] ?? '') as String),
-              subtitle: Text(
-                '${c['role']} • ${isRep ? "مندوب" : "عضو"}',
-                style: TextStyle(
-                  color: isRep ? Colors.green.shade800 : null,
-                ),
-              ),
-              trailing: FilledButton.tonal(
-                onPressed: () => _openEditSheet(c),
-                child: Text(isRep ? 'تعديل' : 'تعيين'),
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor:
+                        isRep ? Colors.green.shade100 : Colors.grey.shade200,
+                    child: Icon(
+                      isRep ? Icons.badge : Icons.person,
+                      color: isRep ? Colors.green.shade800 : Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$role • ${isRep ? "مندوب" : "عضو"}',
+                          style: TextStyle(
+                            color: isRep
+                                ? Colors.green.shade800
+                                : Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (email.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            email,
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonal(
+                    onPressed: () => _openEditSheet(c),
+                    child: Text(isRep ? 'تعديل' : 'تعيين'),
+                  ),
+                ],
               ),
             ),
           );

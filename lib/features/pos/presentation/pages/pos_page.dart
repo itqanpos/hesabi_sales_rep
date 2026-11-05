@@ -18,11 +18,9 @@ class PosPage extends StatefulWidget {
 class _PosPageState extends State<PosPage> {
   late final PosRepository _repo;
 
-  // البيانات
   List<PosProduct> _products = [];
   List<PosCustomer> _customers = [];
 
-  // الحالة
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
@@ -56,7 +54,6 @@ class _PosPageState extends State<PosPage> {
     }
   }
 
-  // ─── Derived state ───
   List<PosProduct> get _filteredProducts {
     if (_searchQuery.isEmpty) return _products;
     final q = _searchQuery.toLowerCase();
@@ -72,7 +69,6 @@ class _PosPageState extends State<PosPage> {
   double get _total => _subtotal - _discount;
   double get _customerBalance => _selectedCustomer?.balance ?? 0;
 
-  // ─── Cart operations ───
   void _addToCart(PosCartLine line) {
     setState(() {
       final i = _cart.indexWhere((l) => l.key == line.key);
@@ -109,7 +105,6 @@ class _PosPageState extends State<PosPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ─── Dialogs ───
   Future<void> _openScanner() async {
     final barcode = await Navigator.push<String>(
       context, MaterialPageRoute(builder: (_) => const _ScannerPage()),
@@ -257,10 +252,6 @@ class _PosPageState extends State<PosPage> {
     );
   }
 }
-
-// ============================================================
-// Sub-widgets
-// ============================================================
 
 class _CustomerBar extends StatelessWidget {
   final PosCustomer? customer;
@@ -575,10 +566,6 @@ class _BottomPanel extends StatelessWidget {
   }
 }
 
-// ============================================================
-// Dialogs
-// ============================================================
-
 class _ScannerPage extends StatelessWidget {
   const _ScannerPage();
   @override
@@ -742,7 +729,7 @@ class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
           ]),
           const SizedBox(height: 8),
           DropdownButtonFormField<PosProductUnit>(
-            initialValue: _selectedUnit,
+            value: _selectedUnit,
             decoration: const InputDecoration(labelText: 'الوحدة', border: OutlineInputBorder(), isDense: true),
             items: widget.product.allUnits.map((u) => DropdownMenuItem(
               value: u, child: Text(u.unitName))).toList(),
@@ -993,7 +980,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
             Expanded(
               flex: 2,
               child: DropdownButtonFormField<String>(
-                initialValue: _payments[i].method,
+                value: _payments[i].method,
                 isDense: true,
                 decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
                 items: PaymentEntry.methods.map((m) =>

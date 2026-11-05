@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RepManagementScreen extends StatefulWidget {
   final String? companyId;
-  const RepManagementScreen({super.key, required this.companyId}); // <--- هذا هو السطر الذي يحدد المتغير
+  const RepManagementScreen({super.key, required this.companyId});
 
   @override
   State<RepManagementScreen> createState() => _RepManagementScreenState();
@@ -116,10 +116,9 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadCandidates,
-      child: ListView.separated(
+      child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: _candidates.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (context, i) {
           final c = _candidates[i];
           final isRep = c['is_already_rep'] == true;
@@ -127,65 +126,60 @@ class _RepManagementScreenState extends State<RepManagementScreen> {
           final email = (c['email'] ?? '') as String;
           final role = (c['role'] ?? '') as String;
 
+          // تصميم مبسط لا يعتمد على Expanded لمنع اختفاء النص في Safari
           return Card(
-            margin: EdgeInsets.zero,
+            margin: const EdgeInsets.only(bottom: 12),
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CircleAvatar(
-                    backgroundColor:
-                        isRep ? Colors.green.shade100 : Colors.grey.shade200,
-                    child: Icon(
-                      isRep ? Icons.badge : Icons.person,
-                      color: isRep ? Colors.green.shade800 : Colors.grey.shade700,
+                  Row(
+                    children: [
+                      Icon(
+                        isRep ? Icons.badge : Icons.person,
+                        color: isRep ? Colors.green : Colors.grey,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isRep ? 'مندوب نشط' : 'عضو عادي',
+                        style: TextStyle(
+                          color: isRep ? Colors.green.shade800 : Colors.grey.shade700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$role • ${isRep ? "مندوب" : "عضو"}',
-                          style: TextStyle(
-                            color: isRep
-                                ? Colors.green.shade800
-                                : Colors.grey.shade600,
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (email.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            email,
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textDirection: TextDirection.ltr,
-                          ),
-                        ],
-                      ],
-                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'الصلاحية: $role',
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonal(
-                    onPressed: () => _openEditSheet(c),
-                    child: Text(isRep ? 'تعديل' : 'تعيين'),
+                  if (email.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      email,
+                      style: const TextStyle(fontSize: 14, color: Colors.blue),
+                      textDirection: TextDirection.ltr,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _openEditSheet(c),
+                      icon: Icon(isRep ? Icons.edit : Icons.person_add),
+                      label: Text(isRep ? 'تعديل المندوب' : 'تعيين كمندوب'),
+                    ),
                   ),
                 ],
               ),

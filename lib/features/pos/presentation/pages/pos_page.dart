@@ -56,16 +56,31 @@ class _PosPageState extends State<PosPage> {
     try {
       final client = Supabase.instance.client;
 
+      // 1. جلب المنتجات
       final prods = await client
           .from('products')
-          .select('''
-            id, name, selling_price, min_selling_price, max_selling_price, default_unit_id,
-            base_unit:units!default_unit_id(name),
-            product_units(id, unit_id, conversion_factor, selling_price, min_selling_price, max_selling_price, unit:units(name))
-          ''')
+          .select('id, name, selling_price, min_selling_price, max_selling_price, default_unit_id')
           .eq('company_id', widget.companyId)
           .eq('is_active', true);
 
+      // 2. جلب جميع الوحدات المتاحة (لتحويل المعرفات إلى أسماء)
+      final unitsData = await client
+          .from('units')
+          .select('id, name')
+          .eq('company_id', widget.companyId);
+      
+      final Map<String, String> unitNames = {};
+      for (var u in unitsData) {
+        unitNames[u['id'] as String] = u['name'] as String;
+      }
+
+      // 3. جلب وحدات المنتجات الإضافية
+      final productUnitsData = await client
+          .from('product_units')
+          .select('id, product_id, unit_id, conversion_factor, selling_price, min_selling_price, max_selling_price')
+          .eq('company_id', widget.companyId);
+
+      // 4. جلب المخزون
       final stock = await client
           .from('inventory_balances')
           .select('product_id, quantity_on_hand')
@@ -78,15 +93,46 @@ class _PosPageState extends State<PosPage> {
         }
       }
 
+      // 5. جلب العملاء
       final custs = await client
           .from('customers')
           .select('id, name, phone, balance')
           .eq('company_id', widget.companyId)
           .order('name');
 
+      // دمج البيانات
+      final List<Map<String, dynamic>> fullProducts = [];
+      for (var p in prods) {
+        final String pId = p['id'] as String;
+        
+        // البحث عن وحدات المنتج الإضافية
+        final extras = productUnitsData.where((pu) => pu['product_id'] == pId).map((pu) {
+          return {
+            'id': pu['id'],
+            'unit_id': pu['unit_id'],
+            'unit_name': unitNames[pu['unit_id']] ?? 'وحدة',
+            'conversion_factor': pu['conversion_factor'],
+            'selling_price': pu['selling_price'],
+            'min_selling_price': pu['min_selling_price'],
+            'max_selling_price': pu['max_selling_price'],
+          };
+        }).toList();
+
+        fullProducts.add({
+          'id': pId,
+          'name': p['name'],
+          'selling_price': p['selling_price'],
+          'min_selling_price': p['min_selling_price'],
+          'max_selling_price': p['max_selling_price'],
+          'default_unit_id': p['default_unit_id'],
+          'base_unit_name': unitNames[p['default_unit_id']] ?? 'قطعة',
+          'product_units': extras,
+        });
+      }
+
       if (mounted) {
         setState(() {
-          _products = (prods as List).cast<Map<String, dynamic>>();
+          _products = fullProducts;
           _filteredProducts = _products;
           _stockMap = sMap;
           _customers = (custs as List).cast<Map<String, dynamic>>();

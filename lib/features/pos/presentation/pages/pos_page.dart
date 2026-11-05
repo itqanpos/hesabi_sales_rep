@@ -100,12 +100,11 @@ class _PosPageState extends State<PosPage> {
           .eq('company_id', widget.companyId)
           .order('name');
 
-      // دمج البيانات
+      // دمج البيانات برمجياً
       final List<Map<String, dynamic>> fullProducts = [];
       for (var p in prods) {
         final String pId = p['id'] as String;
         
-        // البحث عن وحدات المنتج الإضافية
         final extras = productUnitsData.where((pu) => pu['product_id'] == pId).map((pu) {
           return {
             'id': pu['id'],

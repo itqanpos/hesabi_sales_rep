@@ -10,27 +10,37 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailCtrl = TextEditingController();
+  final _identifierCtrl = TextEditingController(); // إيميل أو كود موظف
   final _passCtrl = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _identifierCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
+  /// إذا كان المُدخل لا يحتوي على @ نعتبره كود موظف ونضيف البريد الوهمي
+  String _resolveEmail(String input) {
+    final value = input.trim();
+    if (value.contains('@')) return value;
+    return '$value@hesaby.local';
+  }
+
   Future<void> _login() async {
+    FocusScope.of(context).unfocus();
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
+      final email = _resolveEmail(_identifierCtrl.text);
       await Supabase.instance.client.auth.signInWithPassword(
-        email: _emailCtrl.text.trim(),
+        email: email,
         password: _passCtrl.text,
       );
       if (mounted) context.go('/home');
@@ -61,23 +71,37 @@ class _LoginScreenState extends State<LoginScreen> {
                     'حسابي - المندوب',
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'سجّل بالإيميل أو كود الموظف',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
                   const SizedBox(height: 32),
                   TextField(
-                    controller: _emailCtrl,
+                    controller: _identifierCtrl,
                     keyboardType: TextInputType.emailAddress,
+                    textDirection: TextDirection.ltr,
                     decoration: const InputDecoration(
-                      labelText: 'البريد الإلكتروني',
-                      prefixIcon: Icon(Icons.email),
+                      labelText: 'الإيميل أو كود الموظف',
+                      prefixIcon: Icon(Icons.person),
+                      hintText: 'example@mail.com أو 12345',
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _passCtrl,
-                    obscureText: true,
-                    onSubmitted: (_) => _login(),
-                    decoration: const InputDecoration(
+                    obscureText: _obscurePassword,
+                    onSubmitted: (_) => _loading ? null : _login(),
+                    decoration: InputDecoration(
                       labelText: 'كلمة المرور',
-                      prefixIcon: Icon(Icons.lock),
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
                     ),
                   ),
                   if (_error != null) ...[
@@ -88,9 +112,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: Colors.red.shade50,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: Colors.red.shade900),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: Colors.red, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: Colors.red.shade900),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -101,7 +134,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Text('تسجيل الدخول'),
                   ),

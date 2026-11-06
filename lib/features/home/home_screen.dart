@@ -56,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
   double _monthlyTarget = 0;
   double _monthlySales = 0;
 
+  // ─── Recent activity ───
+  List<Map<String, dynamic>> _recentActivity = [];
+
   bool _loading = true;
   String? _error;
 
@@ -71,7 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final user = client.auth.currentUser;
       if (user == null) return;
 
-      _userName = user.userMetadata?['full_name'] as String? ?? user.email ?? '';
+      _userName =
+          user.userMetadata?['full_name'] as String? ?? user.email ?? '';
 
       final memberships = await client
           .from('company_members')
@@ -80,7 +84,10 @@ class _HomeScreenState extends State<HomeScreen> {
           .eq('is_active', true);
 
       if ((memberships as List).isEmpty) {
-        setState(() { _error = 'لا توجد شركة نشطة لهذا الحساب'; _loading = false; });
+        setState(() {
+          _error = 'لا توجد شركة نشطة لهذا الحساب';
+          _loading = false;
+        });
         return;
       }
 
@@ -88,11 +95,17 @@ class _HomeScreenState extends State<HomeScreen> {
       final first = _memberships.first;
       _selectedCompanyId = first['company_id'] as String;
       _selectedRole = first['role'] as String?;
-      _selectedCompanyName = (first['companies'] as Map?)?['name'] as String?;
+      _selectedCompanyName =
+          (first['companies'] as Map?)?['name'] as String?;
 
       await _loadCompanyContext();
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -123,15 +136,26 @@ class _HomeScreenState extends State<HomeScreen> {
         await _loadKpis(user.id);
       } else {
         _isRep = false;
-        _repId = null; _repBranchId = null; _repType = null;
-        _todaySales = 0; _todayCollections = 0;
-        _todayInvoices = 0; _customersCount = 0;
-        _monthlyTarget = 0; _monthlySales = 0;
+        _repId = null;
+        _repBranchId = null;
+        _repType = null;
+        _todaySales = 0;
+        _todayCollections = 0;
+        _todayInvoices = 0;
+        _customersCount = 0;
+        _monthlyTarget = 0;
+        _monthlySales = 0;
+        _recentActivity = [];
       }
 
       if (mounted) setState(() => _loading = false);
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -143,64 +167,148 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final todaySalesRes = await client
-          .from('sales').select('id, total')
+          .from('sales')
+          .select('id, total')
           .eq('company_id', _selectedCompanyId!)
           .eq('sales_rep_id', _repId!)
           .neq('status', 'cancelled')
           .gte('sale_date', todayStart.toIso8601String());
       final list = (todaySalesRes as List).cast<Map<String, dynamic>>();
       _todayInvoices = list.length;
-      _todaySales = list.fold<double>(0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
-    } catch (_) { _todaySales = 0; _todayInvoices = 0; }
+      _todaySales = list.fold<double>(
+          0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
+    } catch (_) {
+      _todaySales = 0;
+      _todayInvoices = 0;
+    }
 
     try {
       final monthSalesRes = await client
-          .from('sales').select('total')
+          .from('sales')
+          .select('total')
           .eq('company_id', _selectedCompanyId!)
           .eq('sales_rep_id', _repId!)
           .neq('status', 'cancelled')
           .gte('sale_date', monthStart.toIso8601String());
-      _monthlySales = (monthSalesRes as List).fold<double>(0,
-          (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
-    } catch (_) { _monthlySales = 0; }
+      _monthlySales = (monthSalesRes as List).fold<double>(
+          0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
+    } catch (_) {
+      _monthlySales = 0;
+    }
 
     try {
       final paymentsRes = await client
-          .from('customer_payments').select('amount')
+          .from('customer_payments')
+          .select('amount')
           .eq('company_id', _selectedCompanyId!)
           .gte('created_at', todayStart.toIso8601String());
-      _todayCollections = (paymentsRes as List).fold<double>(0,
-          (s, e) => s + ((e['amount'] as num?)?.toDouble() ?? 0));
-    } catch (_) { _todayCollections = 0; }
+      _todayCollections = (paymentsRes as List).fold<double>(
+          0, (s, e) => s + ((e['amount'] as num?)?.toDouble() ?? 0));
+    } catch (_) {
+      _todayCollections = 0;
+    }
 
     try {
       final customersRes = await client
-          .from('customers').select('id')
+          .from('customers')
+          .select('id')
           .eq('company_id', _selectedCompanyId!)
           .eq('is_active', true);
       _customersCount = (customersRes as List).length;
-    } catch (_) { _customersCount = 0; }
+    } catch (_) {
+      _customersCount = 0;
+    }
 
     try {
       final repLink = await client
-          .from('sales_reps').select('rep_id')
-          .eq('id', _repId!).maybeSingle();
+          .from('sales_reps')
+          .select('rep_id')
+          .eq('id', _repId!)
+          .maybeSingle();
       final legacyRepId = repLink?['rep_id'];
       if (legacyRepId != null) {
         final targetRes = await client
-            .from('reps').select('target').eq('id', legacyRepId).maybeSingle();
-        _monthlyTarget = (targetRes?['target'] as num?)?.toDouble() ?? 0;
+            .from('reps')
+            .select('target')
+            .eq('id', legacyRepId)
+            .maybeSingle();
+        _monthlyTarget =
+            (targetRes?['target'] as num?)?.toDouble() ?? 0;
       }
-    } catch (_) { _monthlyTarget = 0; }
+    } catch (_) {
+      _monthlyTarget = 0;
+    }
+
+    await _loadRecentActivity();
+  }
+
+  Future<void> _loadRecentActivity() async {
+    if (_repId == null || _selectedCompanyId == null) {
+      _recentActivity = [];
+      return;
+    }
+    try {
+      final client = Supabase.instance.client;
+
+      final salesRes = await client
+          .from('sales')
+          .select('invoice_number, total, sale_date, status')
+          .eq('company_id', _selectedCompanyId!)
+          .eq('sales_rep_id', _repId!)
+          .neq('status', 'cancelled')
+          .order('sale_date', ascending: false)
+          .limit(3);
+
+      final paymentsRes = await client
+          .from('customer_payments')
+          .select('amount, method, created_at')
+          .eq('company_id', _selectedCompanyId!)
+          .eq('sales_rep_id', _repId!)
+          .order('created_at', ascending: false)
+          .limit(3);
+
+      final list = <Map<String, dynamic>>[];
+      for (final s in (salesRes as List)) {
+        final m = s as Map<String, dynamic>;
+        list.add({
+          'type': 'sale',
+          'title': 'فاتورة #${m['invoice_number'] ?? ''}',
+          'amount': (m['total'] as num?)?.toDouble() ?? 0,
+          'date': m['sale_date'],
+        });
+      }
+      for (final p in (paymentsRes as List)) {
+        final m = p as Map<String, dynamic>;
+        list.add({
+          'type': 'payment',
+          'title': 'تحصيل من عميل',
+          'amount': (m['amount'] as num?)?.toDouble() ?? 0,
+          'date': m['created_at'],
+        });
+      }
+      list.sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '') ??
+            DateTime(2000);
+        final db = DateTime.tryParse(b['date']?.toString() ?? '') ??
+            DateTime(2000);
+        return db.compareTo(da);
+      });
+      _recentActivity = list.take(4).toList();
+    } catch (_) {
+      _recentActivity = [];
+    }
   }
 
   Future<void> _onCompanyChanged(String? companyId) async {
     if (companyId == null || companyId == _selectedCompanyId) return;
-    final m = _memberships.firstWhere((e) => e['company_id'] == companyId, orElse: () => {});
+    final m = _memberships.firstWhere(
+        (e) => e['company_id'] == companyId,
+        orElse: () => {});
     setState(() {
       _selectedCompanyId = companyId;
       _selectedRole = m['role'] as String?;
-      _selectedCompanyName = (m['companies'] as Map?)?['name'] as String?;
+      _selectedCompanyName =
+          (m['companies'] as Map?)?['name'] as String?;
     });
     await _loadCompanyContext();
   }
@@ -212,11 +320,27 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) context.go('/login');
   }
 
-  void _showMessage(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _showMessage(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
 
   // ═════════════════════════════════════════════════════════════
-  //    Actions handlers
+  //    Greeting + helpers
+  // ═════════════════════════════════════════════════════════════
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h >= 4 && h < 12) return 'صباح الخير';
+    if (h >= 12 && h < 17) return 'طاب يومك';
+    return 'مساء الخير';
+  }
+
+  String get _shortName {
+    final n = _userName?.trim() ?? '';
+    if (n.isEmpty) return '';
+    return n.split(RegExp(r'\s+')).first;
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //    Actions
   // ═════════════════════════════════════════════════════════════
   void _openPos() {
     if (_repBranchId == null) {
@@ -230,10 +354,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSalesHistory() {
-    if (_repId == null) { _showMessage('حسابك غير مربوط كمندوب.'); return; }
+    if (_repId == null) {
+      _showMessage('حسابك غير مربوط كمندوب.');
+      return;
+    }
     context.push('/sales', extra: {
       'companyId': _selectedCompanyId,
       'salesRepId': _repId,
+    });
+  }
+
+  void _openCollections() {
+    if (_repId == null) {
+      _showMessage('حسابك غير مربوط كمندوب.');
+      return;
+    }
+    context.push('/collections', extra: {
+      'companyId': _selectedCompanyId,
+      'salesRepId': _repId,
+    });
+  }
+
+  void _openCustomers() {
+    if (_selectedCompanyId == null) return;
+    context.push('/customers', extra: {
+      'companyId': _selectedCompanyId,
     });
   }
 
@@ -249,15 +394,20 @@ class _HomeScreenState extends State<HomeScreen> {
         onAction: (key) {
           Navigator.pop(context);
           switch (key) {
-            case 'customers': _showMessage('شاشة العملاء - قريباً');
-            case 'collections': _showMessage('شاشة التحصيل - قريباً');
-            case 'returns': _showMessage('شاشة المرتجعات - قريباً');
-            case 'custody': _showMessage('شاشة العهدة - قريباً');
-            case 'visits': _showMessage('شاشة الزيارات - قريباً');
-            case 'reports': _showMessage('شاشة التقارير - قريباً');
+            case 'invoices':
+              _openSalesHistory();
+            case 'returns':
+              _showMessage('شاشة المرتجعات - قريباً');
+            case 'custody':
+              _showMessage('شاشة العهدة - قريباً');
+            case 'visits':
+              _showMessage('شاشة الزيارات - قريباً');
+            case 'reports':
+              _showMessage('شاشة التقارير - قريباً');
             case 'admin_reps':
               context.push('/admin/reps', extra: _selectedCompanyId);
-            case 'logout': _logout();
+            case 'logout':
+              _logout();
           }
         },
       ),
@@ -271,7 +421,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: _C.primary)),
+        body: Center(
+            child: CircularProgressIndicator(color: _C.primary)),
       );
     }
 
@@ -287,8 +438,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 Text(_error!, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
-                ElevatedButton(onPressed: _bootstrap, child: const Text('إعادة المحاولة')),
-                TextButton(onPressed: _logout, child: const Text('تسجيل الخروج')),
+                ElevatedButton(
+                    onPressed: _bootstrap,
+                    child: const Text('إعادة المحاولة')),
+                TextButton(
+                    onPressed: _logout,
+                    child: const Text('تسجيل الخروج')),
               ],
             ),
           ),
@@ -305,40 +460,209 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             _buildAppBar(),
             SliverPadding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   if (_memberships.length > 1) ...[
                     _buildCompanySwitcher(),
                     const SizedBox(height: 16),
                   ],
-                  _buildStatusRow(),
-                  const SizedBox(height: 16),
+                  _buildQuickActions(),
+                  const SizedBox(height: 20),
+                  _buildSectionTitle('نظرة سريعة'),
+                  const SizedBox(height: 10),
                   _buildKpiGrid(),
                   if (_isRep && _monthlyTarget > 0) ...[
                     const SizedBox(height: 16),
                     _buildTargetCard(),
                   ],
+                  if (_isRep) ...[
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('آخر النشاطات'),
+                    const SizedBox(height: 10),
+                    _buildRecentActivity(),
+                  ],
                   const SizedBox(height: 20),
                   _buildSectionTitle('حالة النظام'),
                   const SizedBox(height: 10),
                   _buildSyncStatus(),
-                  const SizedBox(height: 80), // مساحة للشريط السفلي
                 ]),
               ),
             ),
           ],
         ),
       ),
-      // ═════════════════════════════════════════════════════════
-      //   الشريط السفلي (Bottom Navigation Bar) — كامل العرض
-      // ═════════════════════════════════════════════════════════
       bottomNavigationBar: _buildBottomNav(),
     );
   }
 
   // ═════════════════════════════════════════════════════════════
-  //   Bottom Navigation Bar
+  //    Quick Actions (جديد)
+  // ═════════════════════════════════════════════════════════════
+  Widget _buildQuickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('إجراءات سريعة'),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            if (_isRep) ...[
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.point_of_sale,
+                  label: 'بيع جديد',
+                  color: _C.success,
+                  onTap: _openPos,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.payments,
+                  label: 'تحصيل',
+                  color: _C.warning,
+                  onTap: _openCollections,
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: _QuickAction(
+                icon: Icons.people_alt,
+                label: 'عملاء',
+                color: _C.purple,
+                onTap: _openCustomers,
+              ),
+            ),
+            if (_isRep) ...[
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.receipt_long,
+                  label: 'فواتير',
+                  color: _C.blue,
+                  onTap: _openSalesHistory,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //    Recent Activity (جديد)
+  // ═════════════════════════════════════════════════════════════
+  Widget _buildRecentActivity() {
+    if (_recentActivity.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _C.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _C.border),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.inbox_outlined,
+                size: 40, color: _C.textSecondary.withOpacity(0.5)),
+            const SizedBox(height: 10),
+            const Text(
+              'لا توجد نشاطات بعد',
+              style: TextStyle(
+                  color: _C.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'ابدأ بيعاً أو تحصيلاً جديداً',
+              style: TextStyle(
+                  color: _C.textSecondary, fontSize: 11),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _C.border),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < _recentActivity.length; i++) ...[
+            _buildActivityItem(_recentActivity[i]),
+            if (i < _recentActivity.length - 1)
+              const Divider(height: 1, color: _C.border, indent: 60),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityItem(Map<String, dynamic> a) {
+    final isSale = a['type'] == 'sale';
+    final color = isSale ? _C.success : _C.warning;
+    final icon = isSale ? Icons.receipt_long : Icons.payments;
+    final date = DateTime.tryParse(a['date']?.toString() ?? '');
+    final timeStr =
+        date != null ? DateFormat('HH:mm', 'en').format(date) : '';
+    final amount = (a['amount'] as num?)?.toDouble() ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  a['title']?.toString() ?? '',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  timeStr,
+                  style: const TextStyle(
+                      fontSize: 11, color: _C.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${isSale ? '' : '- '}${amount.toStringAsFixed(0)} ج.م',
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //    Bottom Navigation Bar (محدّث)
   // ═════════════════════════════════════════════════════════════
   Widget _buildBottomNav() {
     return Container(
@@ -367,22 +691,22 @@ class _HomeScreenState extends State<HomeScreen> {
               if (_isRep) ...[
                 _NavItem(
                   icon: Icons.point_of_sale,
-                  label: 'البيع',
+                  label: 'بيع',
                   active: false,
                   onTap: _openPos,
                 ),
                 _NavItem(
-                  icon: Icons.receipt_long,
-                  label: 'الفواتير',
+                  icon: Icons.payments,
+                  label: 'تحصيل',
                   active: false,
-                  onTap: _openSalesHistory,
+                  onTap: _openCollections,
                 ),
               ],
               _NavItem(
                 icon: Icons.people_alt,
                 label: 'العملاء',
                 active: false,
-                onTap: () => _showMessage('شاشة العملاء - قريباً'),
+                onTap: _openCustomers,
               ),
               _NavItem(
                 icon: Icons.more_horiz,
@@ -400,7 +724,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ─── رأس الصفحة ───
   Widget _buildAppBar() {
     return SliverAppBar(
-      expandedHeight: 160,
+      expandedHeight: 150,
       pinned: true,
       elevation: 0,
       backgroundColor: _C.primary,
@@ -410,7 +734,8 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: const Icon(Icons.notifications_outlined),
           onPressed: () => _showMessage('الإشعارات - قريباً'),
         ),
-        IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+        IconButton(
+            icon: const Icon(Icons.logout), onPressed: _logout),
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
@@ -423,13 +748,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 60, 20, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    'أهلاً، ${_userName ?? ""}',
+                    _shortName.isEmpty
+                        ? _greeting()
+                        : '${_greeting()}، $_shortName',
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -438,15 +765,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _selectedCompanyName ?? '',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withOpacity(0.9),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.business,
+                          color: Colors.white.withOpacity(0.85),
+                          size: 14),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          _selectedCompanyName ?? '',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -477,52 +814,12 @@ class _HomeScreenState extends State<HomeScreen> {
             return DropdownMenuItem<String>(
               value: m['company_id'] as String,
               child: Text(name,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                  style:
+                      const TextStyle(fontWeight: FontWeight.w600)),
             );
           }).toList(),
           onChanged: _onCompanyChanged,
         ),
-      ),
-    );
-  }
-
-  // ─── شارات الحالة ───
-  Widget _buildStatusRow() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        if (_isManager) _buildChip('مدير', Icons.admin_panel_settings, _C.purple),
-        if (_isRep)
-          _buildChip(
-            _repType == 'custody' ? 'مندوب بعهدة' : 'مندوب بدون عهدة',
-            Icons.badge,
-            _C.success,
-          ),
-        _buildChip('متصل', Icons.wifi, _C.blue),
-      ],
-    );
-  }
-
-  Widget _buildChip(String label, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12)),
-        ],
       ),
     );
   }
@@ -551,6 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
           suffix: 'ج.م',
           icon: Icons.payments,
           color: _C.warning,
+          onTap: _openCollections,
         ),
         _buildKpiCard(
           title: 'فواتير اليوم',
@@ -566,6 +864,7 @@ class _HomeScreenState extends State<HomeScreen> {
           suffix: 'عميل',
           icon: Icons.people,
           color: _C.purple,
+          onTap: _openCustomers,
         ),
       ],
     );
@@ -649,7 +948,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ─── بطاقة الهدف ───
   Widget _buildTargetCard() {
-    final percent = (_monthlySales / _monthlyTarget * 100).clamp(0, 100);
+    final percent =
+        (_monthlySales / _monthlyTarget * 100).clamp(0, 100);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -671,8 +971,8 @@ class _HomeScreenState extends State<HomeScreen> {
             const Icon(Icons.flag, color: _C.primary, size: 20),
             const SizedBox(width: 8),
             const Text('هدف الشهر',
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 14)),
             const Spacer(),
             Text('${percent.toStringAsFixed(0)}%',
                 style: const TextStyle(
@@ -695,9 +995,11 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('مبيعات: ${_monthlySales.toStringAsFixed(0)} ج.م',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                  style: TextStyle(
+                      fontSize: 12, color: Colors.grey.shade700)),
               Text('الهدف: ${_monthlyTarget.toStringAsFixed(0)} ج.م',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                  style: TextStyle(
+                      fontSize: 12, color: Colors.grey.shade700)),
             ],
           ),
         ],
@@ -727,7 +1029,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Row(children: [
         Container(
-          width: 12, height: 12,
+          width: 12,
+          height: 12,
           decoration: const BoxDecoration(
               color: _C.success, shape: BoxShape.circle),
         ),
@@ -740,13 +1043,69 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 14)),
               Text('جميع البيانات محدثة',
-                  style:
-                      TextStyle(fontSize: 12, color: _C.textSecondary)),
+                  style: TextStyle(
+                      fontSize: 12, color: _C.textSecondary)),
             ],
           ),
         ),
         Icon(Icons.cloud_done, color: _C.success.withOpacity(0.8)),
       ]),
+    );
+  }
+}
+
+// ============================================================
+// Quick Action Card (جديد)
+// ============================================================
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.25)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -776,7 +1135,8 @@ class _NavItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: active ? _C.primaryLight : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
@@ -800,7 +1160,7 @@ class _NavItem extends StatelessWidget {
 }
 
 // ============================================================
-// More Sheet (نافذة "المزيد")
+// More Sheet (نافذة "المزيد") — محدّثة
 // ============================================================
 class _MoreSheet extends StatelessWidget {
   final bool isManager;
@@ -821,11 +1181,13 @@ class _MoreSheet extends StatelessWidget {
 
     if (isRep) {
       items.addAll([
-        _MoreItem('customers', 'العملاء', Icons.people_alt, _C.purple),
-        _MoreItem('collections', 'التحصيلات', Icons.payments, _C.warning),
-        _MoreItem('returns', 'المرتجعات', Icons.assignment_return, _C.danger),
+        _MoreItem(
+            'invoices', 'الفواتير', Icons.receipt_long, _C.blue),
+        _MoreItem('returns', 'المرتجعات', Icons.assignment_return,
+            _C.danger),
         if (repType == 'custody')
-          _MoreItem('custody', 'العهدة', Icons.inventory_2, _C.primary),
+          _MoreItem(
+              'custody', 'العهدة', Icons.inventory_2, _C.primary),
         _MoreItem('visits', 'الزيارات', Icons.location_on, _C.purple),
         _MoreItem('reports', 'التقارير', Icons.bar_chart, _C.blue),
       ]);
@@ -836,7 +1198,8 @@ class _MoreSheet extends StatelessWidget {
           Icons.manage_accounts, _C.blue));
     }
 
-    items.add(_MoreItem('logout', 'تسجيل الخروج', Icons.logout, _C.danger));
+    items.add(
+        _MoreItem('logout', 'تسجيل الخروج', Icons.logout, _C.danger));
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -846,13 +1209,15 @@ class _MoreSheet extends StatelessWidget {
       builder: (context, scroll) => Container(
         decoration: const BoxDecoration(
           color: _C.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(children: [
           const SizedBox(height: 10),
           Center(
             child: Container(
-              width: 44, height: 4,
+              width: 44,
+              height: 4,
               decoration: BoxDecoration(
                   color: Colors.grey.shade400,
                   borderRadius: BorderRadius.circular(2)),
@@ -899,10 +1264,12 @@ class _MoreSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         onTap: () => onAction(item.key),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(children: [
             Container(
-              width: 44, height: 44,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: item.color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),

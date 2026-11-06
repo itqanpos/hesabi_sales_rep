@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -28,7 +27,7 @@ class PdfInvoiceBuilder {
 
     final document = pw.Document(
       theme: theme,
-      title: 'فاتورة ${sale.invoiceNumber}',
+      title: 'فاتورة ${sale.invoiceNumber ?? ''}',
       author: companyName,
     );
 
@@ -78,20 +77,23 @@ class PdfInvoiceBuilder {
     return pw.Column(
       children: [
         pw.Text(companyName,
-            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+            style:
+                pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
         pw.Text(branchName, style: const pw.TextStyle(fontSize: 12)),
         if (companyPhone.isNotEmpty)
           pw.Text(companyPhone, style: const pw.TextStyle(fontSize: 12)),
         pw.SizedBox(height: 8),
         pw.Container(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 4),
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: PdfColors.black, width: 1),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+            borderRadius:
+                const pw.BorderRadius.all(pw.Radius.circular(4)),
           ),
           child: pw.Text(title,
-              style:
-                  pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              style: pw.TextStyle(
+                  fontSize: 14, fontWeight: pw.FontWeight.bold)),
         ),
       ],
     );
@@ -106,14 +108,14 @@ class PdfInvoiceBuilder {
       children: [
         _metaRow('رقم الفاتورة', sale.invoiceNumber, emphasized: true),
         _metaRow('التاريخ', formattedDate),
-        if (sale.customerName != null && sale.customerName!.isNotEmpty) ...[
-          _metaRow('العميل', sale.customerName!),
-        ],
+        if (sale.customerName.isNotEmpty)
+          _metaRow('العميل', sale.customerName),
       ],
     );
   }
 
-  static pw.Widget _metaRow(String label, String value,
+  /// ⬇️ يقبل `String?` ويعالج الـ null داخلياً
+  static pw.Widget _metaRow(String label, String? value,
       {bool emphasized = false}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 1),
@@ -124,18 +126,20 @@ class PdfInvoiceBuilder {
             width: 80,
             child: pw.Text(
               '$label:',
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(
+                  fontSize: 10, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.right,
             ),
           ),
           pw.SizedBox(width: 4),
           pw.Expanded(
             child: pw.Text(
-              value,
+              value ?? '—',
               style: pw.TextStyle(
                 fontSize: 10,
-                fontWeight:
-                    emphasized ? pw.FontWeight.bold : pw.FontWeight.normal,
+                fontWeight: emphasized
+                    ? pw.FontWeight.bold
+                    : pw.FontWeight.normal,
               ),
               textAlign: pw.TextAlign.left,
             ),
@@ -178,7 +182,8 @@ class PdfInvoiceBuilder {
         children: [
           _cell(_money(line.lineTotal), bold: true, center: true),
           _cell(_money(line.unitPrice), center: true),
-          _cell('${_formatQty(line.quantity)} ${line.unitName}', center: true),
+          _cell('${_formatQty(line.quantity)} ${line.unitName}',
+              center: true),
           _cell(line.productName),
           _cell('${i + 1}', center: true),
         ],
@@ -204,7 +209,8 @@ class PdfInvoiceBuilder {
     );
   }
 
-  static pw.Widget _cell(String text, {bool bold = false, bool center = false}) {
+  static pw.Widget _cell(String text,
+      {bool bold = false, bool center = false}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: pw.Text(
@@ -252,7 +258,8 @@ class PdfInvoiceBuilder {
               label,
               style: pw.TextStyle(
                 fontSize: bold ? 12 : 10,
-                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                fontWeight:
+                    bold ? pw.FontWeight.bold : pw.FontWeight.normal,
               ),
             ),
           ),
@@ -260,7 +267,8 @@ class PdfInvoiceBuilder {
             value,
             style: pw.TextStyle(
               fontSize: bold ? 12 : 10,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              fontWeight:
+                  bold ? pw.FontWeight.bold : pw.FontWeight.normal,
             ),
           ),
         ],

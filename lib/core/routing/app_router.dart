@@ -4,7 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
-import '../../features/collections/presentation/pages/collections_page.dart';   // ⬅️ جديد
+import '../../features/collections/presentation/pages/collections_page.dart';
+import '../../features/customers/presentation/pages/customers_page.dart';
+import '../../features/customers/presentation/pages/customer_statement_page.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/pos/presentation/pages/pos_page.dart';
 import '../../features/sales/presentation/pages/sales_history_page.dart';
@@ -52,8 +54,6 @@ final appRouter = GoRouter(
         );
       },
     ),
-
-    // ⬇️⬇️ جديد: التحصيلات
     GoRoute(
       path: '/collections',
       builder: (context, state) {
@@ -64,6 +64,33 @@ final appRouter = GoRouter(
         return CollectionsPage(
           companyId: data['companyId'] as String,
           salesRepId: data['salesRepId'] as String,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/customers',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
+        }
+        return CustomersPage(companyId: data['companyId'] as String);
+      },
+    ),
+    GoRoute(
+      path: '/customer-statement',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
+        }
+        return CustomerStatementPage(
+          companyId: data['companyId'] as String,
+          customerId: data['customerId'] as String,
+          customerName: data['customerName'] as String? ?? 'عميل',
+          customerPhone: data['customerPhone'] as String?,
+          customerBalance:
+              (data['customerBalance'] as num?)?.toDouble() ?? 0.0,
         );
       },
     ),

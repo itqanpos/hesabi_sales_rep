@@ -31,7 +31,7 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
   CollectionCustomer? _selectedCustomer;
 
   bool _loadingInvoices = false;
-  List<UnpaidInvoice> _invoices = const [];
+  List<CustomerInvoice> _invoices = const [];
 
   String _method = 'cash';
   bool _saving = false;
@@ -82,9 +82,10 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
       _invoices = const [];
     });
     try {
-      final invoices = await widget.repo.getCustomerUnpaidInvoices(
+      final invoices = await widget.repo.getCustomerInvoices(
         companyId: widget.companyId,
         customerId: c.id,
+        limit: 10,
       );
       if (!mounted) return;
       setState(() {
@@ -100,9 +101,6 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
       _snack('تعذر تحميل الفواتير: $e', isError: true);
     }
   }
-
-  double get _invoiceRemaining =>
-      _invoices.fold(0.0, (s, i) => s + i.remaining);
 
   Future<void> _save() async {
     final cust = _selectedCustomer;
@@ -312,7 +310,7 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
         children: [
           _customerCard(cust),
           const SizedBox(height: 14),
-          _label('الفواتير غير المدفوعة'),
+          _label('فواتير العميل السابقة'),
           const SizedBox(height: 6),
           _invoicesBlock(),
           const SizedBox(height: 14),
@@ -398,7 +396,7 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               const Text(
-                'الرصيد',
+                'الرصيد المستحق',
                 style: TextStyle(
                     fontSize: 11, color: _C.textSecondary),
               ),
@@ -438,55 +436,66 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Text(
-          'لا توجد فواتير غير مدفوعة',
-          style:
-              TextStyle(fontSize: 13, color: _C.textSecondary),
+          'لا توجد فواتير سابقة',
+          style: TextStyle(fontSize: 13, color: _C.textSecondary),
         ),
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ..._invoices.take(5).map((inv) => Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _C.border),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '#${inv.invoiceNumber}',
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700),
-                        ),
-                        Text(
-                          _fmtDate(inv.saleDate),
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: _C.textSecondary),
-                        ),
-                      ],
+        for (final inv in _invoices.take(5))
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _C.border),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '#${inv.invoiceNumber}',
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        _fmtDate(inv.saleDate),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: _C.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _fmt(inv.total),
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: _C.text),
                     ),
-                  ),
-                  Text(
-                    _fmt(inv.remaining),
-                    style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: _C.warning),
-                  ),
-                ],
-              ),
-            )),
+                    if (!inv.fullyPaidAtSale)
+                      Text(
+                        'مدفوع مقدم: ${_fmt(inv.paidAtSale)}',
+                        style: const TextStyle(
+                            fontSize: 10,
+                            color: _C.textSecondary),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         if (_invoices.length > 5)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -496,26 +505,6 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
                   fontSize: 12, color: _C.textSecondary),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'إجمالي المتبقي',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-              Text(
-                _fmt(_invoiceRemaining),
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _C.danger),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }

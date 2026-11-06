@@ -6,8 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class BluetoothPrinterService {
   static const _prefKeyAddress = 'printer_address';
   static const _prefKeyName = 'printer_name';
+  static const _prefKeyFontSize = 'printer_font_size';
+  static const _prefKeyFontBold = 'printer_font_bold';
 
-  /// بحث عن طابعات البلوتوث المقترنة
   static Future<List<PrinterDevice>> discoverPrinters() async {
     final printers = <PrinterDevice>[];
     try {
@@ -43,14 +44,27 @@ class BluetoothPrinterService {
     await prefs.setString(_prefKeyName, name);
   }
 
-  static Future<void> clearSavedPrinter() async {
+  // ⬇️⬇️ إعدادات حجم الخط والوزن
+  static Future<double> getFontSize() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_prefKeyAddress);
-    await prefs.remove(_prefKeyName);
+    return prefs.getDouble(_prefKeyFontSize) ?? 1.0; // Default: 1.0
   }
 
-  /// الاتصال بالطابعة
-  /// ✅ بدون ?? false — لأن connect() بترجع bool مباشرة
+  static Future<void> saveFontSize(double size) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_prefKeyFontSize, size);
+  }
+
+  static Future<bool> getFontBold() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefKeyFontBold) ?? false; // Default: false
+  }
+
+  static Future<void> saveFontBold(bool bold) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKeyFontBold, bold);
+  }
+
   static Future<bool> connect(PrinterDevice device) async {
     try {
       final address = device.address;

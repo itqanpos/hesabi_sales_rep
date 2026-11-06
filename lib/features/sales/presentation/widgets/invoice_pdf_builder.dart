@@ -22,8 +22,15 @@ class PdfInvoiceBuilder {
       bold: fontBold,
     );
 
-    const pageFormat = PdfPageFormat.a4;
-    const padding = 28.0;
+    // ⬇️⬇️⬇️ التغيير الأساسي: 80mm بدل A4
+    // ارتفاع ديناميكي بناءً على عدد المنتجات
+    final lineCount = sale.items.length;
+    final baseMm = 160.0 + (lineCount * 12.0);
+    final pageFormat = PdfPageFormat(
+      80 * PdfPageFormat.mm,
+      baseMm * PdfPageFormat.mm,
+    );
+    const padding = 4.0;
 
     final document = pw.Document(
       theme: theme,
@@ -47,17 +54,17 @@ class PdfInvoiceBuilder {
                 branchName: branchName,
                 companyPhone: companyPhone,
               ),
-              pw.SizedBox(height: 16),
+              pw.SizedBox(height: 6),
               _buildMetaBlock(sale),
-              pw.SizedBox(height: 16),
-              _buildDivider(double: true),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 6),
+              _divider(),
+              pw.SizedBox(height: 4),
               _buildItemsTable(sale),
-              pw.SizedBox(height: 16),
+              pw.SizedBox(height: 6),
               _buildTotalsSection(sale),
-              pw.SizedBox(height: 24),
-              _buildDivider(),
               pw.SizedBox(height: 10),
+              _divider(),
+              pw.SizedBox(height: 4),
               _buildFooter(),
             ],
           ),
@@ -68,6 +75,9 @@ class PdfInvoiceBuilder {
     return document.save();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   الرأس (مختصر — إيصال ضيق)
+  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildHeader({
     required String title,
     required String companyName,
@@ -76,49 +86,51 @@ class PdfInvoiceBuilder {
   }) {
     return pw.Column(
       children: [
-        pw.Text(companyName,
-            style:
-                pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-        pw.Text(branchName, style: const pw.TextStyle(fontSize: 12)),
+        pw.Text(
+          companyName,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+          textAlign: pw.TextAlign.center,
+        ),
+        pw.Text(
+          branchName,
+          style: const pw.TextStyle(fontSize: 8),
+          textAlign: pw.TextAlign.center,
+        ),
         if (companyPhone.isNotEmpty)
-          pw.Text(companyPhone, style: const pw.TextStyle(fontSize: 12)),
-        pw.SizedBox(height: 8),
+          pw.Text(
+            companyPhone,
+            style: const pw.TextStyle(fontSize: 8),
+            textAlign: pw.TextAlign.center,
+          ),
+        pw.SizedBox(height: 4),
         pw.Container(
           padding:
-              const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.black, width: 1),
-            borderRadius:
-                const pw.BorderRadius.all(pw.Radius.circular(4)),
+            border: pw.Border.all(color: PdfColors.black, width: 0.8),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
           ),
-          child: pw.Text(title,
-              style: pw.TextStyle(
-                  fontSize: 14, fontWeight: pw.FontWeight.bold)),
+          child: pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
         ),
       ],
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   التصحيح الأساسي #1: التاريخ — اسم اليوم بالعربي + أرقام إنجليزية
+  //   بيانات الفاتورة (رقم، تاريخ، عميل)
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildMetaBlock(SaleDetail sale) {
-    // ✅ اسم اليوم فقط بالعربي (يرندر بشكل صحيح)
+    // اسم اليوم بالعربي + أرقام إنجليزية (بدون مربعات)
     final dayName = DateFormat('EEEE', 'ar').format(sale.saleDate);
-
-    // ✅ التاريخ والأرقام بالإنجليزية (0-9 موجودة في Cairo)
     final datePart = DateFormat('yyyy/MM/dd', 'en').format(sale.saleDate);
-
-    // ✅ الوقت بأرقام إنجليزية + ص/م عربية
     final hour = sale.saleDate.hour;
-    final hour12 = hour == 0
-        ? 12
-        : (hour > 12 ? hour - 12 : hour);
+    final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     final minute = sale.saleDate.minute.toString().padLeft(2, '0');
     final ampm = hour >= 12 ? 'م' : 'ص';
-    final timePart =
-        '${hour12.toString().padLeft(2, '0')}:$minute $ampm';
-
+    final timePart = '${hour12.toString().padLeft(2, '0')}:$minute $ampm';
     final formattedDate = '$dayName $datePart - $timePart';
 
     return pw.Column(
@@ -128,6 +140,8 @@ class PdfInvoiceBuilder {
         _metaRow('التاريخ', formattedDate),
         if (sale.customerName.isNotEmpty)
           _metaRow('العميل', sale.customerName),
+        if (sale.customerPhone != null && sale.customerPhone!.isNotEmpty)
+          _metaRow('هاتف العميل', sale.customerPhone!),
       ],
     );
   }
@@ -135,25 +149,25 @@ class PdfInvoiceBuilder {
   static pw.Widget _metaRow(String label, String? value,
       {bool emphasized = false}) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+      padding: const pw.EdgeInsets.symmetric(vertical: 0.5),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.SizedBox(
-            width: 80,
+            width: 50,
             child: pw.Text(
               '$label:',
               style: pw.TextStyle(
-                  fontSize: 10, fontWeight: pw.FontWeight.bold),
+                  fontSize: 7.5, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.right,
             ),
           ),
-          pw.SizedBox(width: 4),
+          pw.SizedBox(width: 2),
           pw.Expanded(
             child: pw.Text(
               value ?? '-',
               style: pw.TextStyle(
-                fontSize: 10,
+                fontSize: 7.5,
                 fontWeight: emphasized
                     ? pw.FontWeight.bold
                     : pw.FontWeight.normal,
@@ -166,13 +180,16 @@ class PdfInvoiceBuilder {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   جدول المنتجات (5 أعمدة — عرض 80mm)
+  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildItemsTable(SaleDetail sale) {
     final columnWidths = <int, pw.TableColumnWidth>{
-      0: const pw.FlexColumnWidth(1.4),
-      1: const pw.FlexColumnWidth(1.2),
-      2: const pw.FlexColumnWidth(1.3),
-      3: const pw.FlexColumnWidth(2.5),
-      4: const pw.FixedColumnWidth(24),
+      0: const pw.FixedColumnWidth(14),   // م
+      1: const pw.FlexColumnWidth(3),     // الصنف
+      2: const pw.FixedColumnWidth(30),   // الكمية
+      3: const pw.FixedColumnWidth(32),   // السعر
+      4: const pw.FixedColumnWidth(40),   // الإجمالي
     };
 
     double totalQuantity = 0;
@@ -184,11 +201,11 @@ class PdfInvoiceBuilder {
       pw.TableRow(
         decoration: const pw.BoxDecoration(color: PdfColors.grey300),
         children: [
-          _cell('الإجمالي', bold: true),
-          _cell('السعر', bold: true, center: true),
-          _cell('الكمية', bold: true, center: true),
-          _cell('الصنف', bold: true),
           _cell('م', bold: true, center: true),
+          _cell('الصنف', bold: true, right: true),
+          _cell('الكمية', bold: true, center: true),
+          _cell('السعر', bold: true, center: true),
+          _cell('الإجمالي', bold: true, center: true),
         ],
       ),
     ];
@@ -197,12 +214,12 @@ class PdfInvoiceBuilder {
       final line = sale.items[i];
       rows.add(pw.TableRow(
         children: [
-          _cell(_money(line.lineTotal), bold: true, center: true),
-          _cell(_money(line.unitPrice), center: true),
-          _cell('${_formatQty(line.quantity)} ${line.unitName}',
-              center: true),
-          _cell(line.productName),
           _cell('${i + 1}', center: true),
+          _cell(line.productName, right: true),
+          _cell('${_formatQty(line.quantity)}\n${line.unitName}',
+              center: true),
+          _cell(_money(line.unitPrice), center: true),
+          _cell(_money(line.lineTotal), center: true, bold: true),
         ],
       ));
     }
@@ -210,71 +227,83 @@ class PdfInvoiceBuilder {
     rows.add(pw.TableRow(
       decoration: const pw.BoxDecoration(color: PdfColors.grey100),
       children: [
-        _cell(_money(sale.total), bold: true, center: true),
-        _cell(''),
-        _cell(_formatQty(totalQuantity), center: true),
-        _cell('المجموع الفرعي', bold: true),
-        _cell(''),
+        _cell('', center: true),
+        _cell('المجموع الفرعي', bold: true, right: true),
+        _cell(_formatQty(totalQuantity), center: true, bold: true),
+        _cell('', center: true),
+        _cell(_money(sale.total), center: true, bold: true),
       ],
     ));
 
     return pw.Table(
-      border: pw.TableBorder.all(color: PdfColors.grey700, width: 0.5),
+      border: pw.TableBorder.all(color: PdfColors.grey700, width: 0.4),
       defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
       columnWidths: columnWidths,
       children: rows,
     );
   }
 
-  static pw.Widget _cell(String text,
-      {bool bold = false, bool center = false}) {
+  static pw.Widget _cell(
+    String text, {
+    bool bold = false,
+    bool center = false,
+    bool right = false,
+  }) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 1, vertical: 2),
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          fontSize: 9,
+          fontSize: 7,
           fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
         ),
-        textAlign: center ? pw.TextAlign.center : pw.TextAlign.right,
+        textAlign: center
+            ? pw.TextAlign.center
+            : (right ? pw.TextAlign.right : pw.TextAlign.left),
       ),
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   الإجماليات (في مربع — زي صورة Hesabi)
+  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildTotalsSection(SaleDetail sale) {
     final remaining = sale.total - sale.paidAmount;
 
     return pw.Container(
-      padding: const pw.EdgeInsets.all(10),
+      padding: const pw.EdgeInsets.all(6),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.black, width: 1.2),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        border: pw.Border.all(color: PdfColors.black, width: 0.8),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          _pdfRow('إجمالي الفاتورة', _money(sale.total)),
-          _pdfDivider(),
-          _pdfRow('المطلوب', _money(sale.total), bold: true),
-          _pdfDivider(),
-          _pdfRow('المدفوع', _money(sale.paidAmount), bold: true),
-          _pdfDivider(),
-          _pdfRow('الرصيد المتبقي', _money(remaining), bold: true),
+          _row('إجمالي الفاتورة', _money(sale.total), bold: false),
+          _miniDivider(),
+          _row('المطلوب', _money(sale.total), bold: true),
+          _miniDivider(),
+          _row('المدفوع', _money(sale.paidAmount), bold: true),
+          if (remaining.abs() > 0.001) ...[
+            _miniDivider(),
+            _row('المتبقي', _money(remaining), bold: true),
+          ],
         ],
       ),
     );
   }
 
-  static pw.Widget _pdfRow(String label, String value, {bool bold = false}) {
+  static pw.Widget _row(String label, String value, {bool bold = false}) {
+    final fontSize = bold ? 9.0 : 7.5;
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      padding: const pw.EdgeInsets.symmetric(vertical: 1),
       child: pw.Row(
         children: [
           pw.Expanded(
             child: pw.Text(
               label,
               style: pw.TextStyle(
-                fontSize: bold ? 12 : 10,
+                fontSize: fontSize,
                 fontWeight:
                     bold ? pw.FontWeight.bold : pw.FontWeight.normal,
               ),
@@ -283,7 +312,7 @@ class PdfInvoiceBuilder {
           pw.Text(
             value,
             style: pw.TextStyle(
-              fontSize: bold ? 12 : 10,
+              fontSize: fontSize,
               fontWeight:
                   bold ? pw.FontWeight.bold : pw.FontWeight.normal,
             ),
@@ -293,45 +322,30 @@ class PdfInvoiceBuilder {
     );
   }
 
-  static pw.Widget _pdfDivider() {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Container(height: 0.5, color: PdfColors.grey600),
-    );
-  }
+  static pw.Widget _miniDivider() => pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 1),
+        child: pw.Container(height: 0.3, color: PdfColors.grey500),
+      );
+
+  static pw.Widget _divider() =>
+      pw.Container(height: 0.5, color: PdfColors.grey600);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   التصحيح الأساسي #2: التذييل — بدون italic + بدون تنوين
+  //   التذييل (بدون italic + بدون تنوين = بدون مربعات)
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildFooter() {
     return pw.Center(
       child: pw.Text(
-        // ✅ "شكرا" بدون تنوين (Cairo يدعم الحروف لكن التنوين يسبب مشاكل)
-        // ✅ بدون fontStyle: italic (Cairo ليس له نسخة italic)
         'شكرا لتعاملكم معنا',
-        style: const pw.TextStyle(
-          fontSize: 10,
-          color: PdfColors.black,
-        ),
+        style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.black),
         textAlign: pw.TextAlign.center,
       ),
     );
   }
 
-  static pw.Widget _buildDivider({bool double = false}) {
-    if (double) {
-      return pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          pw.Container(height: 0.6, color: PdfColors.grey600),
-          pw.SizedBox(height: 2),
-          pw.Container(height: 0.6, color: PdfColors.grey600),
-        ],
-      );
-    }
-    return pw.Container(height: 0.6, color: PdfColors.grey600);
-  }
-
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   Helpers
+  // ═══════════════════════════════════════════════════════════════════════════
   static String _money(double value) =>
       NumberFormat('#,##0.00', 'en').format(value);
 

@@ -603,7 +603,6 @@ class _C {
   static const primaryDark = Color(0xFF00695C);
   static const primaryLight = Color(0xFFE0F2F1);
   static const success = Color(0xFF2E7D32);
-  static const warning = Color(0xFFE65100);
   static const danger = Color(0xFFC62828);
   static const surface = Colors.white;
   static const surfaceGray = Color(0xFFF5F5F5);

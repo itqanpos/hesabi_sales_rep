@@ -6,9 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/pos_models.dart';
 import '../../data/pos_repository.dart';
 
-// ============================================================
-// ألوان Hesabi الرسمية (مطابقة للصور)
-// ============================================================
 class _C {
   static const primary       = Color(0xFF00897B);
   static const primaryDark   = Color(0xFF00695C);
@@ -64,10 +61,7 @@ class _PosPageState extends State<PosPage> {
       final productsF = _repo.loadProducts(widget.companyId, widget.branchId);
       final customersF = _repo.loadCustomers(widget.companyId);
       final companyF = Supabase.instance.client
-          .from('companies')
-          .select('name')
-          .eq('id', widget.companyId)
-          .maybeSingle();
+          .from('companies').select('name').eq('id', widget.companyId).maybeSingle();
 
       final products = await productsF;
       final customers = await customersF;
@@ -169,7 +163,7 @@ class _PosPageState extends State<PosPage> {
 
   Future<void> _openPayment() async {
     if (_cart.isEmpty) return;
-    final result = await showModalBottomSheet<PosCartLine>(
+    final ok = await showModalBottomSheet<bool>(
       context: context, isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _PaymentSheet(
@@ -183,7 +177,7 @@ class _PosPageState extends State<PosPage> {
         customerBalance: _customerBalance,
       ),
     );
-    if (result != null) {
+    if (ok == true) {
       setState(() { _cart.clear(); _discount = 0; _selectedCustomer = null; _searchQuery = ''; });
       _load();
     }
@@ -337,8 +331,7 @@ class _CustomerBar extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(children: [
-              Icon(has ? Icons.person : Icons.person_outline,
-                  color: _C.primary, size: 22),
+              Icon(has ? Icons.person : Icons.person_outline, color: _C.primary, size: 22),
               const SizedBox(width: 10),
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
@@ -736,10 +729,8 @@ class _BottomPanelState extends State<_BottomPanel> {
               ]),
               Row(
                 mainAxisSize: MainAxisSize.min,
-                textDirection: TextDirection.ltr,
                 children: [
                   const Text('الخصم',
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(fontSize: 13, color: _C.text)),
                   const SizedBox(width: 8),
                   SizedBox(
@@ -767,7 +758,6 @@ class _BottomPanelState extends State<_BottomPanel> {
                   ),
                   const SizedBox(width: 6),
                   const Text('ج.م',
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(fontSize: 13, color: _C.text)),
                 ],
               ),
@@ -779,15 +769,8 @@ class _BottomPanelState extends State<_BottomPanel> {
             children: [
               const Text('الصافي',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _C.text)),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                textDirection: TextDirection.ltr,
-                children: [
-                  Text('${widget.total.toStringAsFixed(2)} ج.م',
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _C.primary)),
-                ],
-              ),
+              Text('${widget.total.toStringAsFixed(2)} ج.م',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _C.primary)),
             ],
           ),
           const SizedBox(height: 10),
@@ -822,6 +805,181 @@ class _BottomPanelState extends State<_BottomPanel> {
             ),
           ]),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Unit Selector — بطاقات Radio (تصميم Hesabi)
+// ============================================================
+class _UnitSelectorSheet extends StatefulWidget {
+  final PosProduct product;
+  const _UnitSelectorSheet({required this.product});
+  @override
+  State<_UnitSelectorSheet> createState() => _UnitSelectorSheetState();
+}
+
+class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
+  late PosProductUnit _selectedUnit;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedUnit = widget.product.allUnits.first;
+  }
+
+  void _submit() {
+    final price = _selectedUnit.effectivePrice(widget.product.defaultPrice);
+    final min = _selectedUnit.effectiveMin(widget.product.minPrice);
+    final max = _selectedUnit.effectiveMax(widget.product.maxPrice);
+    Navigator.pop(context, PosCartLine(
+      productId: widget.product.id,
+      productName: widget.product.name,
+      unitId: _selectedUnit.unitId,
+      unitName: _selectedUnit.unitName,
+      quantity: 1,
+      unitPrice: price,
+      minPrice: min,
+      maxPrice: max,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final units = widget.product.allUnits;
+    final currentPrice = _selectedUnit.effectivePrice(widget.product.defaultPrice);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      decoration: const BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Center(child: Container(width: 44, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 20),
+
+        Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('اختر وحدة البيع',
+                    style: TextStyle(fontSize: 18,
+                        fontWeight: FontWeight.bold, color: _C.text)),
+                const SizedBox(height: 4),
+                Text('المنتج: ${widget.product.name}',
+                    style: const TextStyle(fontSize: 12.5,
+                        color: _C.textSecondary),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: _C.text),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ]),
+        const SizedBox(height: 16),
+
+        for (final u in units) ...[
+          _buildUnitCard(u, u.unitId == _selectedUnit.unitId),
+          const SizedBox(height: 10),
+        ],
+
+        const SizedBox(height: 8),
+
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: FilledButton.icon(
+            onPressed: _submit,
+            icon: const Icon(Icons.add_shopping_cart),
+            label: Text('إضافة للسلة (${currentPrice.toStringAsFixed(2)} ج.م)',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            style: FilledButton.styleFrom(
+              backgroundColor: _C.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildUnitCard(PosProductUnit u, bool isSelected) {
+    final price = u.effectivePrice(widget.product.defaultPrice);
+    final isBase = u.isBase;
+
+    return Material(
+      color: isSelected ? _C.primaryLight : _C.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _selectedUnit = u),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected ? _C.primary : _C.border,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Name + conversion (RIGHT in RTL = first child)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(u.unitName,
+                            style: const TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.bold, color: _C.text)),
+                        const SizedBox(height: 3),
+                        Text(
+                          isBase
+                              ? 'الوحدة الأساسية'
+                              : 'عدد ${u.conversionFactor.toInt()} قطعة',
+                          style: const TextStyle(fontSize: 11,
+                              color: _C.textSecondary),
+                        ),
+                      ],
+                    ),
+                    // Price + label (LEFT in RTL = second child)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${price.toStringAsFixed(2)} ج.م',
+                            style: const TextStyle(fontSize: 16,
+                                fontWeight: FontWeight.bold, color: _C.primaryDark)),
+                        const SizedBox(height: 3),
+                        Text('لل${u.unitName}',
+                            style: const TextStyle(fontSize: 11,
+                                color: _C.textSecondary)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Radio<bool>(
+                value: true,
+                groupValue: isSelected,
+                onChanged: (_) => setState(() => _selectedUnit = u),
+                activeColor: _C.primary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -928,150 +1086,6 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
   }
 }
 
-class _UnitSelectorSheet extends StatefulWidget {
-  final PosProduct product;
-  const _UnitSelectorSheet({required this.product});
-  @override
-  State<_UnitSelectorSheet> createState() => _UnitSelectorSheetState();
-}
-
-class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
-  late PosProductUnit _selectedUnit;
-  late final TextEditingController _qtyCtrl;
-  late final TextEditingController _priceCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedUnit = widget.product.allUnits.first;
-    _qtyCtrl = TextEditingController(text: '1');
-    _priceCtrl = TextEditingController(
-      text: _selectedUnit.effectivePrice(widget.product.defaultPrice).toStringAsFixed(2));
-  }
-
-  @override
-  void dispose() { _qtyCtrl.dispose(); _priceCtrl.dispose(); super.dispose(); }
-
-  void _submit() {
-    final qty = double.tryParse(_qtyCtrl.text) ?? 0;
-    final price = double.tryParse(_priceCtrl.text) ?? 0;
-    if (qty <= 0) return;
-    final min = _selectedUnit.effectiveMin(widget.product.minPrice);
-    final max = _selectedUnit.effectiveMax(widget.product.maxPrice);
-    if (min != null && price < min) return;
-    if (max != null && price > max) return;
-    Navigator.pop(context, PosCartLine(
-      productId: widget.product.id,
-      productName: widget.product.name,
-      unitId: _selectedUnit.unitId,
-      unitName: _selectedUnit.unitName,
-      quantity: qty, unitPrice: price,
-      minPrice: min, maxPrice: max,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final qty = double.tryParse(_qtyCtrl.text) ?? 0;
-    final price = double.tryParse(_priceCtrl.text) ?? 0;
-    final min = _selectedUnit.effectiveMin(widget.product.minPrice);
-    final max = _selectedUnit.effectiveMax(widget.product.maxPrice);
-    final valid = (min == null || price >= min) &&
-        (max == null || price <= max) && qty > 0;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
-          color: _C.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2)))),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(child: Text(widget.product.name,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _C.text))),
-            IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-          ]),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<PosProductUnit>(
-            value: _selectedUnit,
-            decoration: InputDecoration(
-              labelText: 'الوحدة',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _C.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-              isDense: true,
-            ),
-            items: widget.product.allUnits.map((u) => DropdownMenuItem(
-              value: u, child: Text(u.unitName))).toList(),
-            onChanged: (u) {
-              if (u == null) return;
-              setState(() {
-                _selectedUnit = u;
-                _priceCtrl.text = u.effectivePrice(widget.product.defaultPrice).toStringAsFixed(2);
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: TextField(
-              controller: _qtyCtrl, keyboardType: TextInputType.number, textAlign: TextAlign.center,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-              decoration: InputDecoration(
-                labelText: 'الكمية',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-                isDense: true,
-              ),
-              onChanged: (_) => setState(() {}),
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: TextField(
-              controller: _priceCtrl, keyboardType: TextInputType.number, textAlign: TextAlign.center,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-              decoration: InputDecoration(
-                labelText: 'السعر',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-                isDense: true,
-                errorText: valid ? null : (qty <= 0 ? 'كمية غير صحيحة' : 'سعر خارج النطاق'),
-              ),
-              onChanged: (_) => setState(() {}),
-            )),
-          ]),
-          if (min != null || max != null) ...[
-            const SizedBox(height: 8),
-            Text('النطاق المسموح: ${min?.toStringAsFixed(2) ?? '—'} - ${max?.toStringAsFixed(2) ?? '—'} ج.م',
-                style: const TextStyle(fontSize: 11, color: _C.textSecondary)),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(width: double.infinity, height: 50, child: FilledButton(
-            onPressed: valid ? _submit : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: _C.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            ),
-            child: Text('إضافة للسلة (${(qty * price).toStringAsFixed(2)} ج.م)',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          )),
-        ]),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// Payment Sheet
-// ============================================================
 class _PaymentSheet extends StatefulWidget {
   final PosRepository repository;
   final String companyId;
@@ -1128,7 +1142,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
         discount: widget.discount,
       );
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       await _showSuccessDialog(saleId);
     } catch (e) {
       if (mounted) setState(() { _saving = false; _error = e.toString(); });
@@ -1167,6 +1181,8 @@ class _PaymentSheetState extends State<_PaymentSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return DraggableScrollableSheet(
       initialChildSize: 0.88, minChildSize: 0.5, maxChildSize: 0.95, expand: false,
       builder: (context, scroll) => Container(
@@ -1265,7 +1281,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                     const Icon(Icons.error_outline, size: 18, color: _C.danger),
                     const SizedBox(width: 8),
                     Expanded(child: Text(_error!,
-                        style: const TextStyle(color: _C.danger, fontSize: 13))),
+                        style: const TextStyle(color: _C.danger, fontSize: 12))),
                   ]),
                 ),
               ],
@@ -1427,7 +1443,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
           Expanded(child: Text(
             _remaining.abs() <= 0.01 ? 'المدفوع مطابق للمطلوب'
                 : _remaining > 0 ? 'المتبقي' : 'زيادة (تُضاف للرصيد)',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12,
                 color: _remaining.abs() <= 0.01 ? _C.success
                     : _remaining > 0 ? _C.warning : _C.primary),
           )),
@@ -1451,7 +1467,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
         const SizedBox(width: 10),
         const Expanded(child: Text(
           'سيتم إضافة كامل قيمة الفاتورة إلى رصيد العميل.',
-          style: TextStyle(color: _C.warning, fontSize: 13, fontWeight: FontWeight.w600),
+          style: TextStyle(color: _C.warning, fontSize: 12.5, fontWeight: FontWeight.w600),
         )),
       ]),
     );
@@ -1464,9 +1480,6 @@ class _PaymentSheetState extends State<_PaymentSheet> {
   }[m] ?? Icons.more_horiz;
 }
 
-// ============================================================
-// Success Dialog
-// ============================================================
 class _SuccessDialog extends StatelessWidget {
   final String companyName;
   final List<PosCartLine> cart;
@@ -1501,15 +1514,10 @@ class _SuccessDialog extends StatelessWidget {
           SizedBox(
             width: double.infinity, height: 52,
             child: FilledButton.icon(
-              onPressed: () async {
+              onPressed: () {
                 Navigator.pop(context);
-                await showDialog(
-                  context: context,
-                  builder: (_) => _ReceiptDialog(
-                    companyName: companyName, cart: cart, payments: payments,
-                    customer: customer, discount: discount,
-                    subtotal: subtotal, total: total, saleId: saleId,
-                  ),
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('الطباعة ستُضاف قريباً')),
                 );
               },
               icon: const Icon(Icons.print_outlined),
@@ -1523,18 +1531,6 @@ class _SuccessDialog extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.ios_share, size: 18),
-              label: const Text('مشاركة'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 46),
-                side: const BorderSide(color: _C.border),
-                foregroundColor: _C.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
-            )),
-            const SizedBox(width: 10),
             Expanded(child: OutlinedButton.icon(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.add, size: 18),
@@ -1551,221 +1547,4 @@ class _SuccessDialog extends StatelessWidget {
       ),
     );
   }
-}
-
-// ============================================================
-// Receipt Dialog
-// ============================================================
-class _ReceiptDialog extends StatelessWidget {
-  final String companyName;
-  final List<PosCartLine> cart;
-  final List<PaymentEntry> payments;
-  final PosCustomer? customer;
-  final double discount, subtotal, total;
-  final String saleId;
-
-  const _ReceiptDialog({
-    required this.companyName, required this.cart, required this.payments,
-    this.customer, required this.discount, required this.subtotal,
-    required this.total, required this.saleId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final invoiceNum = 'INV-${now.year}-${saleId.substring(0, 4).toUpperCase()}';
-    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.pop(context),
-            ),
-            const Spacer(),
-            const Text('معاينة الإيصال',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _C.text)),
-            const SizedBox(width: 8),
-            const Icon(Icons.print_outlined, color: _C.primary),
-            const Spacer(),
-          ]),
-          const SizedBox(height: 8),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Icon(Icons.zoom_in, color: _C.textSecondary, size: 20),
-            const Text('100%', style: TextStyle(fontSize: 12, color: _C.textSecondary)),
-            const Icon(Icons.zoom_out, color: _C.textSecondary, size: 20),
-          ]),
-          const SizedBox(height: 8),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _C.surface,
-                border: Border.all(color: _C.border),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SingleChildScrollView(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Center(child: Text(companyName,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _C.text))),
-                  const SizedBox(height: 4),
-                  const Center(child: Text('الفرع الرئيسي',
-                      style: TextStyle(fontSize: 11, color: _C.textSecondary))),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                    decoration: BoxDecoration(border: Border.all(color: _C.text)),
-                    child: const Center(child: Text('فاتورة مبيعات',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                  ),
-                  const SizedBox(height: 8),
-                  _infoRow('رقم الفاتورة:', invoiceNum, isBold: true),
-                  _infoRow('التاريخ:', '$dateStr — ${now.hour}:${now.minute.toString().padLeft(2, '0')}'),
-                  _infoRow('الكاشير:', customer?.name ?? 'عميل نقدي'),
-                  const Divider(height: 16),
-                  Container(
-                    decoration: BoxDecoration(border: Border.all(color: _C.text)),
-                    child: Column(children: [
-                      Container(
-                        color: _C.surfaceGray,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(children: const [
-                          Expanded(flex: 1, child: _T('م', bold: true)),
-                          Expanded(flex: 4, child: _T('الصنف', bold: true)),
-                          Expanded(flex: 2, child: _T('الكمية', bold: true)),
-                          Expanded(flex: 2, child: _T('السعر', bold: true)),
-                          Expanded(flex: 2, child: _T('الإجمالي', bold: true)),
-                        ]),
-                      ),
-                      for (int i = 0; i < cart.length; i++)
-                        Container(
-                          decoration: const BoxDecoration(
-                            border: Border(top: BorderSide(color: _C.text, width: 0.5)),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 5),
-                          child: Row(children: [
-                            Expanded(flex: 1, child: _T('${i + 1}')),
-                            Expanded(flex: 4, child: _T(cart[i].productName)),
-                            Expanded(flex: 2, child: _T('${cart[i].quantity.toInt()} ${cart[i].unitName}')),
-                            Expanded(flex: 2, child: _T(cart[i].unitPrice.toStringAsFixed(0))),
-                            Expanded(flex: 2, child: _T(cart[i].lineTotal.toStringAsFixed(0))),
-                          ]),
-                        ),
-                      Container(
-                        decoration: const BoxDecoration(
-                          border: Border(top: BorderSide(color: _C.text, width: 0.5)),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 5),
-                        child: Row(children: [
-                          const Expanded(flex: 7, child: _T('المجموع الفرعي', bold: true)),
-                          Expanded(flex: 2, child: _T('', bold: true)),
-                        ]),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(border: Border.all(color: _C.text)),
-                    child: Column(children: [
-                      if (discount > 0)
-                        _totalRow('الخصم', '-${discount.toStringAsFixed(0)}', danger: true),
-                      _totalRow('إجمالي الفاتورة', total.toStringAsFixed(0)),
-                      for (final p in payments)
-                        _totalRow(PaymentEntry.label(p.method), p.amount.toStringAsFixed(0)),
-                      Container(
-                        decoration: const BoxDecoration(
-                          border: Border(top: BorderSide(color: _C.text, width: 0.5)),
-                        ),
-                        child: _totalRow(
-                            'المدفوع',
-                            payments.fold<double>(0, (s, p) => s + p.amount).toStringAsFixed(0),
-                            bold: true),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 12),
-                  const Center(child: Text('شكراً لتعاملكم معنا',
-                      style: TextStyle(fontSize: 11, color: _C.textSecondary))),
-                ]),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity, height: 50,
-            child: FilledButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.print_outlined),
-              label: const Text('طباعة',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              style: FilledButton.styleFrom(
-                backgroundColor: _C.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity, height: 46,
-            child: OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.ios_share, size: 18),
-              label: const Text('مشاركة'),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _C.border),
-                foregroundColor: _C.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _infoRow(String label, String value, {bool isBold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _C.text)),
-        const SizedBox(width: 6),
-        Expanded(child: Text(value, style: TextStyle(
-            fontSize: 11, color: _C.text,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal))),
-      ]),
-    );
-  }
-
-  Widget _totalRow(String label, String value, {bool bold = false, bool danger = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: _C.text, width: 0.5)),
-      ),
-      child: Row(children: [
-        Expanded(child: Text(label, style: TextStyle(
-            fontSize: 11, fontWeight: bold ? FontWeight.bold : FontWeight.w600,
-            color: danger ? _C.danger : _C.text))),
-        Text(value, style: TextStyle(
-            fontSize: 11, fontWeight: bold ? FontWeight.bold : FontWeight.w600,
-            color: danger ? _C.danger : _C.text)),
-      ]),
-    );
-  }
-}
-
-class _T extends StatelessWidget {
-  final String text;
-  final bool bold;
-  const _T(this.text, {this.bold = false});
-  @override
-  Widget build(BuildContext context) => Text(text,
-      textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 10.5, color: _C.text,
-          fontWeight: bold ? FontWeight.bold : FontWeight.normal));
 }

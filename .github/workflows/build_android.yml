@@ -1,152 +1,235 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: "android-build-${{ github.ref }}"
-  cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: flutter-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
+          channel: stable
           cache: true
 
-      # ⬇️⬇️ تحميل خطوط Cairo (روابط محدثة تعمل 100%)
+      - name: Display Flutter version
+        run: flutter --version
+
+      # ⬇️⬇️ تحميل خطوط Cairo (تحتاجها Sales Rep فقط)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
-          echo "✅ Fonts downloaded:"
+          echo "✅ Fonts downloaded"
           ls -la assets/fonts/
-
-      # ⬇️⬇️ حذف مجلد أندرويد القديم وإنشاء جديد لضمان v2
-      - name: Force recreate Android platform
-        run: |
-          rm -rf android
-          flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
-          echo "✅ Android platform created."
-
-      # ⬇️⬇️ كتابة MainActivity.kt يدوياً (لضمان v2)
-      - name: Force write MainActivity.kt
-        run: |
-          mkdir -p android/app/src/main/kotlin/com/itqanpos/hesabi_sales_rep
-          cat > android/app/src/main/kotlin/com/itqanpos/hesabi_sales_rep/MainActivity.kt <<'EOF'
-          package com.itqanpos.hesabi_sales_rep
-
-          import io.flutter.embedding.android.FlutterActivity
-
-          class MainActivity: FlutterActivity()
-          EOF
-          echo "✅ MainActivity.kt written."
-
-      # ⬇️⬇️ كتابة AndroidManifest.xml يدوياً (أذونات + v2)
-      - name: Force write AndroidManifest.xml
-        run: |
-          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-
-              <application
-                  android:label="Hesabi Sales Rep"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:taskAffinity=""
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme"
-                        />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
-              </application>
-              <queries>
-                  <intent>
-                      <action android:name="android.intent.action.PROCESS_TEXT"/>
-                      <data android:mimeType="text/plain"/>
-                  </intent>
-              </queries>
-          </manifest>
-          EOF
-          echo "✅ AndroidManifest.xml written."
 
       - name: Install dependencies
         run: flutter pub get
 
+      # ⬇️⬇️ حذف test القديم (زي Hesabi)
+      - name: Remove default widget test
+        run: rm -f test/widget_test.dart
+
+      # ⬇️⬇️ إنشاء android/ folder
+      - name: Generate android/ folder
+        run: |
+          flutter create \
+            --platforms=android \
+            --org com.itqanpos \
+            --project-name hesabi_sales_rep \
+            --description "Hesabi Sales Rep - Mobile app for sales representatives" \
+            .
+
+      - name: Re-install dependencies after android generation
+        run: flutter pub get
+
+      # ⬇️⬇️ إجبار SDK versions (زي Hesabi)
+      - name: Set minSdkVersion 23 / compileSdkVersion 36 / targetSdkVersion 36
+        run: |
+          for f in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$f" ]; then
+              sed -i 's/minSdkVersion flutter\.minSdkVersion/minSdkVersion 23/' "$f" || true
+              sed -i 's/minSdk = flutter\.minSdkVersion/minSdk = 23/' "$f" || true
+              sed -i 's/minSdkVersion 21/minSdkVersion 23/' "$f" || true
+              sed -i 's/minSdk = 21/minSdk = 23/' "$f" || true
+              sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' "$f" || true
+              sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' "$f" || true
+              sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/' "$f" || true
+              sed -i 's/compileSdk = [0-9]*/compileSdk = 36/' "$f" || true
+              sed -i 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 36/' "$f" || true
+              sed -i 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 36/' "$f" || true
+              sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/' "$f" || true
+              sed -i 's/targetSdk = [0-9]*/targetSdk = 36/' "$f" || true
+            fi
+          done
+
+      # ⬇️⬇️⬇️ السر الذهبي — إجبار كل plugins على compileSdk 36
+      - name: Patch compileSdk for ALL plugins in pub cache (dynamic)
+        run: |
+          set -e
+          PUB_CACHE_ROOT="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev"
+          if [ ! -d "$PUB_CACHE_ROOT" ]; then
+            echo "!! pub-cache root not found at $PUB_CACHE_ROOT"
+            exit 1
+          fi
+          python3 - "$PUB_CACHE_ROOT" <<'PY'
+          import re, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          total = 0
+          patched = 0
+          for pkg in sorted(root.iterdir()):
+              if not pkg.is_dir(): continue
+              android_dir = pkg / 'android'
+              if not android_dir.is_dir(): continue
+              for fname in ('build.gradle', 'build.gradle.kts'):
+                  f = android_dir / fname
+                  if not f.exists(): continue
+                  total += 1
+                  text = f.read_text()
+                  original = text
+                  text = re.sub(r'compileSdkVersion\s*=?\s*[0-9]+', 'compileSdkVersion 36', text)
+                  text = re.sub(r'compileSdkVersion\(\s*[0-9]+\s*\)', 'compileSdkVersion(36)', text)
+                  text = re.sub(r'compileSdk\s*=\s*[0-9]+', 'compileSdk = 36', text)
+                  text = re.sub(r'compileSdk\(\s*[0-9]+\s*\)', 'compileSdk(36)', text)
+                  text = re.sub(r'\bcompileSdk\s+[0-9]+\b', 'compileSdk 36', text)
+                  # ⬇️ إصلاح إضافي لـ app_links 6.4.1 واللي زيها
+                  text = re.sub(r'compileSdk\s*=?\s*project\.flutter\.compileSdkVersion', 'compileSdk = 36', text)
+                  text = re.sub(r'compileSdk\s*=?\s*flutter\.compileSdkVersion', 'compileSdk = 36', text)
+                  if text != original:
+                      f.write_text(text)
+                      patched += 1
+          print('---')
+          print(f'Android build files scanned: {total}')
+          print(f'Android build files patched: {patched}')
+          PY
+
+      # ⬇️⬇️ إضافة الأذونات (نفس Hesabi)
+      - name: Add Android permissions
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+          fi
+          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.CAMERA" />' "$MANIFEST"
+          fi
+          if ! grep -q 'android.permission.BLUETOOTH_SCAN' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />' "$MANIFEST"
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />' "$MANIFEST"
+          fi
+          if ! grep -q 'android.permission.BLUETOOTH_ADMIN' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />' "$MANIFEST"
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />' "$MANIFEST"
+          fi
+          if ! grep -q 'ACCESS_FINE_LOCATION' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
+          fi
+          if ! grep -q 'WRITE_EXTERNAL_STORAGE' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />' "$MANIFEST"
+          fi
+          if ! grep -q 'android.hardware.camera' "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-feature android:name="android.hardware.camera" android:required="false" />' "$MANIFEST"
+          fi
+          if ! grep -q 'EnableImpeller' "$MANIFEST"; then
+            python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text()
+          text = text.replace('</application>', '    <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false" />\n    </application>')
+          p.write_text(text)
+          print("Injected EnableImpeller = false")
+          PY
+          fi
+
+      # ⬇️⬇️ ProGuard rules لـ mobile_scanner
+      - name: Create ProGuard rules for mobile_scanner
+        run: |
+          mkdir -p android/app
+          cat > android/app/proguard-rules.pro <<'EOF'
+          -keep class com.google.mlkit.** { *; }
+          -keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
+          -keep class com.google.android.libraries.barhopper.** { *; }
+          -keep class dev.steenbakker.mobile_scanner.** { *; }
+          EOF
+
+      - name: Link ProGuard rules in build.gradle.kts
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          p = pathlib.Path('android/app/build.gradle.kts')
+          if not p.exists():
+              print("build.gradle.kts not found")
+              raise SystemExit(0)
+          text = p.read_text()
+          if 'proguard-rules.pro' not in text:
+              text = re.sub(
+                  r'(buildTypes\s*\{[\s\S]*?release\s*\{)',
+                  r'\1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")',
+                  text,
+                  count=1,
+              )
+              p.write_text(text)
+              print("Linked proguard-rules.pro in build.gradle.kts")
+          else:
+              print("proguard-rules.pro already linked")
+          PY
+
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # ⬇️⬇️ البناء
+      # ⬇️⬇️ Build APK (Release — موقّع بـ debug مؤقتاً)
       - name: Build Release APK
         run: |
           flutter build apk --release \
+            --target-platform=android-arm64,android-arm \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Check APK size
+      - name: Collect APK
         run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          if [ -f "$APK" ]; then
-            SIZE=$(du -h "$APK" | cut -f1)
-            echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
-          fi
+          mkdir -p build/apk
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "build/apk/hesabi-sales-rep-build${{ github.run_number }}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: hesabi-sales-rep-apk-v${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: hesabi-sales-rep-apk-build${{ github.run_number }}
+          path: build/apk/*.apk
           retention-days: 30
+          if-no-files-found: error
 
       - name: Summary
         run: |
+          SIZE=$(du -h build/apk/*.apk | cut -f1)
           {
             echo "## ✅ تم بناء APK بنجاح"
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| **الإصدار** | v${{ github.run_number }} |"
-            echo "| **حجم APK** | ${{ env.APK_SIZE }} |"
+            echo "| **رقم البناء** | #${{ github.run_number }} |"
+            echo "| **حجم APK** | $SIZE |"
+            echo "| **Flutter** | latest stable |"
+            echo "| **compileSdk** | 36 |"
+            echo "| **minSdk** | 23 |"
+            echo "| **targetSdk** | 36 |"
           } >> $GITHUB_STEP_SUMMARY

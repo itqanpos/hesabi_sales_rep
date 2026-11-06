@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/login_screen.dart';
 import '../../features/admin/rep_management_screen.dart';
+import '../../features/collections/presentation/pages/collections_page.dart';   // ⬅️ جديد
 import '../../features/home/home_screen.dart';
 import '../../features/pos/presentation/pages/pos_page.dart';
 import '../../features/sales/presentation/pages/sales_history_page.dart';
@@ -46,6 +47,21 @@ final appRouter = GoRouter(
           return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
         }
         return SalesHistoryPage(
+          companyId: data['companyId'] as String,
+          salesRepId: data['salesRepId'] as String,
+        );
+      },
+    ),
+
+    // ⬇️⬇️ جديد: التحصيلات
+    GoRoute(
+      path: '/collections',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
+        }
+        return CollectionsPage(
           companyId: data['companyId'] as String,
           salesRepId: data['salesRepId'] as String,
         );

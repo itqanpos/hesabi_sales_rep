@@ -20,24 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ⬇️⬇️⬇️ المفتاح: cache: false لإجبار تحميل آخر نسخة (مثل Android)
       - name: Setup Flutter (latest stable, no cache)
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: false
 
-      - name: Verify Flutter & Dart versions
-        run: |
-          echo "=== FLUTTER ===" && flutter --version
-          echo "=== DART ===" && dart --version
-
-      # ⬇️⬇️ تحميل خطوط Cairo (كان ناقص)
+      # ⬇️⬇️ تحميل Cairo (المتغير — اللي كان شغال)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -fL -o assets/fonts/Cairo-Regular.ttf \
-            "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           echo "✅ Fonts downloaded:"
           ls -la assets/fonts/
@@ -45,21 +38,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # ⬇️⬇️⬇️ حذف widget_test.dart القديم (اللي فيه MyApp) — ده كان سبب الفشل
       - name: Remove default test & add sanity test
         run: |
           rm -rf test
           mkdir -p test
           cat > test/sanity_test.dart <<'EOF'
           import 'package:flutter_test/flutter_test.dart';
-
           void main() {
-            test('sanity check - project compiles', () {
-              expect(2 + 2, 4);
-            });
+            test('sanity check', () => expect(2 + 2, 4));
           }
           EOF
-          echo "✅ Test folder cleaned"
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings

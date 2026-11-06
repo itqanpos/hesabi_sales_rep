@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -94,15 +96,18 @@ class _CollectionsPageState extends State<CollectionsPage> {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         backgroundColor: _C.bg,
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _openNewPayment,
           backgroundColor: _C.primary,
           icon: const Icon(Icons.add, color: Colors.white),
-          label: const Text('تسجيل دفعة',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          label: const Text(
+            'تسجيل دفعة',
+            style: TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700),
+          ),
         ),
         body: Column(
           children: [
@@ -123,7 +128,8 @@ class _CollectionsPageState extends State<CollectionsPage> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _C.primary));
+      return const Center(
+          child: CircularProgressIndicator(color: _C.primary));
     }
     if (_error != null) {
       return _ErrorView(message: _error!, onRetry: _load);
@@ -135,10 +141,14 @@ class _CollectionsPageState extends State<CollectionsPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.payments_outlined, size: 56, color: _C.textSecondary),
+              Icon(Icons.payments_outlined,
+                  size: 56, color: _C.textSecondary),
               SizedBox(height: 12),
-              Text('لا توجد تحصيلات في هذه الفترة',
-                  style: TextStyle(color: _C.textSecondary, fontSize: 15)),
+              Text(
+                'لا توجد تحصيلات في هذه الفترة',
+                style:
+                    TextStyle(color: _C.textSecondary, fontSize: 15),
+              ),
             ],
           ),
         ),
@@ -186,11 +196,13 @@ class _Header extends StatelessWidget {
                 onPressed: () => Navigator.of(context).maybePop(),
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
               ),
-              const Text('التحصيلات',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700)),
+              const Text(
+                'التحصيلات',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -211,25 +223,29 @@ class _StatChip extends StatelessWidget {
   final String label;
   final String value;
   const _StatChip({required this.label, required this.value});
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
+        color: Colors.white.withOpacity(0.18),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              style:
+                  const TextStyle(color: Colors.white70, fontSize: 11)),
           const SizedBox(height: 2),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700)),
+          Text(
+            value,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );
@@ -269,9 +285,11 @@ class _FilterStrip extends StatelessWidget {
                 selectedColor: _C.primaryLight,
                 labelStyle: TextStyle(
                   color: selected ? _C.primaryDark : _C.text,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight:
+                      selected ? FontWeight.w700 : FontWeight.w500,
                 ),
-                side: BorderSide(color: selected ? _C.primary : _C.border),
+                side: BorderSide(
+                    color: selected ? _C.primary : _C.border),
                 backgroundColor: Colors.white,
               ),
             );
@@ -313,15 +331,18 @@ class _CollectionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.customerName ?? 'عميل محذوف',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700)),
+                Text(
+                  entry.customerName ?? 'عميل محذوف',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   '${entry.methodLabel} · ${_fmtDateTime(entry.createdAt)}',
-                  style: const TextStyle(fontSize: 12, color: _C.textSecondary),
+                  style: const TextStyle(
+                      fontSize: 12, color: _C.textSecondary),
                 ),
               ],
             ),
@@ -330,7 +351,9 @@ class _CollectionTile extends StatelessWidget {
           Text(
             _fmtMoney(entry.amount),
             style: const TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w800, color: _C.success),
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: _C.success),
           ),
         ],
       ),
@@ -344,6 +367,7 @@ class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
   const _ErrorView({required this.message, required this.onRetry});
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -352,13 +376,20 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: _C.danger),
+            const Icon(Icons.error_outline,
+                size: 48, color: _C.danger),
             const SizedBox(height: 12),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: _C.textSecondary, fontSize: 13)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: _C.textSecondary, fontSize: 13),
+            ),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: onRetry, child: const Text('إعادة المحاولة')),
+            ElevatedButton(
+              onPressed: onRetry,
+              child: const Text('إعادة المحاولة'),
+            ),
           ],
         ),
       ),
@@ -385,7 +416,6 @@ class _C {
   static const success = Color(0xFF2E7D32);
   static const successLight = Color(0xFFE8F5E9);
   static const danger = Color(0xFFC62828);
-  static const surface = Colors.white;
   static const border = Color(0xFFE0E0E0);
   static const text = Color(0xFF1A1A1A);
   static const textSecondary = Color(0xFF757575);

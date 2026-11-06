@@ -333,13 +333,24 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ⬇️⬇️ جديد: دالة فتح الزيارات
   void _openVisits() {
     if (_repId == null) {
       _showMessage('حسابك غير مربوط كمندوب.');
       return;
     }
     context.push('/visits', extra: {
+      'companyId': _selectedCompanyId,
+      'salesRepId': _repId,
+    });
+  }
+
+  // ⬇️⬇️ جديد: دالة فتح الأهداف والعمولات
+  void _openTargets() {
+    if (_repId == null) {
+      _showMessage('حسابك غير مربوط كمندوب.');
+      return;
+    }
+    context.push('/targets', extra: {
       'companyId': _selectedCompanyId,
       'salesRepId': _repId,
     });
@@ -364,9 +375,11 @@ class _HomeScreenState extends State<HomeScreen> {
             case 'custody':
               _showMessage('شاشة العهدة - قريباً');
             case 'visits':
-              _openVisits(); // ⬅️ تعديل هنا
+              _openVisits();
             case 'reports':
               _openReports();
+            case 'targets':
+              _openTargets(); // ⬅️ جديد
             case 'admin_reps':
               context.push('/admin/reps', extra: _selectedCompanyId);
             case 'logout':
@@ -939,63 +952,70 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── بطاقة الهدف ───
+  // ─── بطاقة الهدف (قابلة للضغط — تفتح صفحة الأهداف) ───
   Widget _buildTargetCard() {
     final percent =
         (_monthlySales / _monthlyTarget * 100).clamp(0, 100);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            _C.primary.withOpacity(0.08),
-            _C.primaryDark.withOpacity(0.15),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _C.primary.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Icon(Icons.flag, color: _C.primary, size: 20),
-            const SizedBox(width: 8),
-            const Text('هدف الشهر',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 14)),
-            const Spacer(),
-            Text('${percent.toStringAsFixed(0)}%',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _C.primary,
-                    fontSize: 16)),
-          ]),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: percent / 100,
-              minHeight: 10,
-              backgroundColor: Colors.white.withOpacity(0.6),
-              valueColor: const AlwaysStoppedAnimation(_C.primary),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('مبيعات: ${_monthlySales.toStringAsFixed(0)} ج.م',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade700)),
-              Text('الهدف: ${_monthlyTarget.toStringAsFixed(0)} ج.م',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade700)),
+    return InkWell(
+      onTap: _openTargets,                       // ⬅️ جديد: قابل للضغط
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              _C.primary.withOpacity(0.08),
+              _C.primaryDark.withOpacity(0.15),
             ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _C.primary.withOpacity(0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.flag, color: _C.primary, size: 20),
+              const SizedBox(width: 8),
+              const Text('هدف الشهر',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14)),
+              const Spacer(),
+              Text('${percent.toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _C.primary,
+                      fontSize: 16)),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_left,
+                  color: _C.primary, size: 18),
+            ]),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: percent / 100,
+                minHeight: 10,
+                backgroundColor: Colors.white.withOpacity(0.6),
+                valueColor: const AlwaysStoppedAnimation(_C.primary),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('مبيعات: ${_monthlySales.toStringAsFixed(0)} ج.م',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade700)),
+                Text('الهدف: ${_monthlyTarget.toStringAsFixed(0)} ج.م',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade700)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1175,6 +1195,8 @@ class _MoreSheet extends StatelessWidget {
           _MoreItem('custody', 'العهدة', Icons.inventory_2, _C.primary),
         _MoreItem('visits', 'الزيارات', Icons.location_on, _C.purple),
         _MoreItem('reports', 'التقارير', Icons.bar_chart, _C.blue),
+        // ⬇️⬇️ جديد: الأهداف والعمولات
+        _MoreItem('targets', 'الأهداف والعمولات', Icons.flag, _C.success),
       ]);
     }
 
@@ -1187,9 +1209,9 @@ class _MoreSheet extends StatelessWidget {
         _MoreItem('logout', 'تسجيل الخروج', Icons.logout, _C.danger));
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
+      initialChildSize: 0.65,
       minChildSize: 0.4,
-      maxChildSize: 0.85,
+      maxChildSize: 0.9,
       expand: false,
       builder: (context, scroll) => Container(
         decoration: const BoxDecoration(

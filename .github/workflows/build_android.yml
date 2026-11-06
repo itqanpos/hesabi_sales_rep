@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: write       # ⬅️ مهم: للسماح بإنشاء Releases
 
 concurrency:
   group: flutter-apk-${{ github.ref }}
@@ -28,13 +28,12 @@ jobs:
           channel: stable
           cache: false
 
-      # ⬇️⬇️ تحميل Cairo (المتغير — اللي كان شغال)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
           curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
-          echo "✅ Fonts downloaded:"
+          echo "✅ Fonts downloaded"
           ls -la assets/fonts/
 
       - name: Force recreate Android platform
@@ -208,14 +207,56 @@ jobs:
           mkdir -p build/apk
           cp build/app/outputs/flutter-apk/app-release.apk \
              "build/apk/hesabi-sales-rep-build${{ github.run_number }}.apk"
+          ls -la build/apk/
 
-      - name: Upload APK
+      # ⬇️⬇️⬇️ جديد: رفع الـ Artifact (30 يوم)
+      - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: hesabi-sales-rep-apk-build${{ github.run_number }}
           path: build/apk/*.apk
           retention-days: 30
           if-no-files-found: error
+
+      # ⬇️⬇️⬇️ جديد: نشر في Releases (دائم + سهل الوصول)
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: "Hesabi Sales Rep APK — Latest (Build #${{ github.run_number }})"
+          body: |
+            ## 📱 Hesabi Sales Rep — آخر إصدار
+
+            **Build Number:** #${{ github.run_number }}
+            **Commit:** `${{ github.sha }}`
+            **Built from:** `${{ github.ref_name }}`
+            **Date:** ${{ github.event.head_commit.timestamp || 'auto' }}
+            **Size:** ${{ env.APK_SIZE }}
+
+            ### 📥 كيفية التثبيت:
+            1. حمّل ملف **`.apk`** من الأسفل
+            2. افتحه على هاتف Android
+            3. اسمح بـ "تثبيت من مصادر غير معروفة"
+            4. ثبّت وافتح التطبيق
+
+            ### ✨ المميزات:
+            - ✅ تسجيل دخول (إيميل أو كود موظف)
+            - ✅ نقطة بيع كاملة
+            - ✅ تحصيلات وعملاء وكشوف حساب
+            - ✅ مرتجعات (حر + مرتبط بفاتورة)
+            - ✅ تقارير شاملة (مبيعات/تحصيلات/مديونيات)
+            - ✅ زيارات GPS
+            - ✅ أهداف وعمولات
+            - ✅ طباعة حرارية (بلوتوث)
+            - ✅ إعدادات الطابعة (حجم/خط)
+
+            ### ⚠️ ملاحظات:
+            - APK موقّع بـ debug key (للاختبار)
+            - يعمل على Android 6.0+ (API 23+)
+          files: build/apk/*.apk
+          make_latest: true
+          draft: false
+          prerelease: true
 
       - name: Summary
         run: |
@@ -227,4 +268,8 @@ jobs:
             echo "|---|---|"
             echo "| **رقم البناء** | #${{ github.run_number }} |"
             echo "| **حجم APK** | $SIZE |"
+            echo ""
+            echo "### 📥 التحميل:"
+            echo "- **Artifact (30 يوم):** أسفل الصفحة في قسم Artifacts"
+            echo "- **Release (دائم):** [اضغط هنا](../../releases/tag/apk-latest)"
           } >> $GITHUB_STEP_SUMMARY

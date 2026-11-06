@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../domain/sales_models.dart';
 import '../../data/sales_history_repository.dart';
+import '../widgets/invoice_printer.dart';   // ⬅️ جديد — للطباعة والمشاركة
 
 class _C {
   static const primary       = Color(0xFF00897B);
@@ -429,10 +430,47 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
   bool _loading = true;
   String? _error;
 
+  // بيانات الشركة (للطباعة)
+  String _companyName = 'شركة';
+  String _branchName = 'الفرع الرئيسي';
+  String _companyPhone = '';
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadCompanyInfo();
+  }
+
+  Future<void> _loadCompanyInfo() async {
+    try {
+      final client = Supabase.instance.client;
+      final companyId = client.auth.currentUser?.userMetadata?['company_id']
+          as String?;
+      if (companyId == null) return;
+
+      final c = await client
+          .from('companies')
+          .select('name, phone')
+          .eq('id', companyId)
+          .maybeSingle();
+      if (c != null) {
+        _companyName = (c['name'] as String?) ?? _companyName;
+        _companyPhone = (c['phone'] as String?) ?? '';
+      }
+
+      final b = await client
+          .from('branches')
+          .select('name')
+          .eq('company_id', companyId)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+      if (b != null) {
+        _branchName = (b['name'] as String?) ?? _branchName;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -447,6 +485,26 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
     }
+  }
+
+  Future<void> _print(SaleDetail sale) async {
+    await InvoicePrinter.print(
+      context: context,
+      sale: sale,
+      companyName: _companyName,
+      branchName: _branchName,
+      companyPhone: _companyPhone,
+    );
+  }
+
+  Future<void> _share(SaleDetail sale) async {
+    await InvoicePrinter.share(
+      context: context,
+      sale: sale,
+      companyName: _companyName,
+      branchName: _branchName,
+      companyPhone: _companyPhone,
+    );
   }
 
   @override
@@ -525,21 +583,32 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 12),
 
-        // البنود
+        // ⬇️⬇️⬇️ جدول المنتجات (محسّن ليطابق الفاتورة المطبوعة)
         _Card(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('المنتجات',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _C.text)),
-            const SizedBox(height: 10),
-            for (int i = 0; i < sale.items.length; i++) ...[
-              _ItemRow(index: i + 1, item: sale.items[i]),
-              if (i < sale.items.length - 1)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 6),
-                  child: Divider(height: 1, color: _C.border),
+            Row(children: [
+              const Icon(Icons.inventory_2_outlined,
+                  size: 18, color: _C.primary),
+              const SizedBox(width: 6),
+              const Text('المنتجات',
+                  style: TextStyle(fontWeight: FontWeight.bold,
+                      fontSize: 14, color: _C.text)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _C.primaryLight,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-            ],
+                child: Text('${sale.items.length} صنف',
+                    style: const TextStyle(fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: _C.primaryDark)),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            _buildProductsTable(sale),
           ],
         )),
 
@@ -547,26 +616,30 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         // الإجماليات
         _Card(child: Column(children: [
-          _TotalRow(label: 'المجموع الفرعي', value: sale.subtotal),
-          if (sale.discount > 0) ...[
-            const SizedBox(height: 8),
-            _TotalRow(label: 'الخصم', value: -sale.discount, color: _C.danger),
+          if (sale.discount > 0 || sale.taxAmount > 0) ...[
+            _TotalRow(label: 'المجموع الفرعي', value: sale.subtotal),
+            if (sale.discount > 0) ...[
+              const SizedBox(height: 8),
+              _TotalRow(label: 'الخصم', value: -sale.discount, color: _C.danger),
+            ],
+            if (sale.taxAmount > 0) ...[
+              const SizedBox(height: 8),
+              _TotalRow(label: 'الضريبة', value: sale.taxAmount),
+            ],
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: _C.border),
+            const SizedBox(height: 10),
           ],
-          if (sale.taxAmount > 0) ...[
-            const SizedBox(height: 8),
-            _TotalRow(label: 'الضريبة', value: sale.taxAmount),
-          ],
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: _C.border),
-          const SizedBox(height: 10),
-          _TotalRow(label: 'الإجمالي', value: sale.total, bold: true, color: _C.primary, fontSize: 16),
+          _TotalRow(label: 'إجمالي الفاتورة', value: sale.total,
+              bold: true, color: _C.primary, fontSize: 16),
           const SizedBox(height: 10),
           const Divider(height: 1, color: _C.border),
           const SizedBox(height: 10),
           _TotalRow(label: 'المدفوع', value: sale.paidAmount, color: _C.success),
           if (sale.remaining > 0.01) ...[
             const SizedBox(height: 8),
-            _TotalRow(label: 'المتبقي', value: sale.remaining, color: _C.danger, bold: true),
+            _TotalRow(label: 'المتبقي', value: sale.remaining,
+                color: _C.danger, bold: true),
           ],
         ])),
 
@@ -576,7 +649,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text('ملاحظات',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _C.text)),
+                  style: TextStyle(fontWeight: FontWeight.bold,
+                      fontSize: 13, color: _C.text)),
               const SizedBox(height: 6),
               Text(sale.notes!,
                   style: const TextStyle(fontSize: 12.5, color: _C.textSecondary)),
@@ -586,24 +660,24 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 20),
 
-        // الأزرار
+        // ⬇️⬇️⬇️ الأزرار: مشاركة + طباعة
         Row(children: [
           Expanded(child: OutlinedButton.icon(
-            onPressed: () => _snack('قريباً: المرتجع المرتبط'),
-            icon: const Icon(Icons.assignment_return_outlined),
-            label: const Text('مرتجع'),
+            onPressed: () => _share(sale),
+            icon: const Icon(Icons.share_outlined, size: 20),
+            label: const Text('مشاركة', style: TextStyle(fontWeight: FontWeight.w800)),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 48),
-              side: const BorderSide(color: _C.border),
+              side: const BorderSide(color: _C.primary),
               foregroundColor: _C.primary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             ),
           )),
           const SizedBox(width: 10),
           Expanded(child: FilledButton.icon(
-            onPressed: () => _snack('قريباً: الطباعة'),
-            icon: const Icon(Icons.print_outlined),
-            label: const Text('طباعة'),
+            onPressed: () => _print(sale),
+            icon: const Icon(Icons.print, size: 20),
+            label: const Text('طباعة', style: TextStyle(fontWeight: FontWeight.w800)),
             style: FilledButton.styleFrom(
               minimumSize: const Size(0, 48),
               backgroundColor: _C.primary,
@@ -612,15 +686,151 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
           )),
         ]),
 
+        const SizedBox(height: 10),
+
+        // زر المرتجع (placeholder)
+        OutlinedButton.icon(
+          onPressed: () => _snack('قريباً: المرتجع المرتبط'),
+          icon: const Icon(Icons.assignment_return_outlined, size: 20),
+          label: const Text('تسجيل مرتجع مرتبط بهذه الفاتورة',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 48),
+            side: const BorderSide(color: _C.border),
+            foregroundColor: _C.textSecondary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          ),
+        ),
+
         const SizedBox(height: 24),
       ],
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   جدول المنتجات — مطابق للفاتورة المطبوعة
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildProductsTable(SaleDetail sale) {
+    final totalQty = sale.items.fold<double>(0, (s, i) => s + i.quantity);
+    final itemsSum = sale.items.fold<double>(0, (s, i) => s + i.lineTotal);
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: _C.border, width: 0.8),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Table(
+        border: TableBorder.symmetric(
+          inside: const BorderSide(color: _C.border, width: 0.5),
+        ),
+        columnWidths: const {
+          0: FixedColumnWidth(26),   // م
+          1: FlexColumnWidth(),       // الصنف
+          2: FixedColumnWidth(64),    // الكمية
+          3: FixedColumnWidth(58),    // السعر
+          4: FixedColumnWidth(72),    // الإجمالي
+        },
+        children: [
+          // ── Header ──────────────────────────────────────────────────────
+          TableRow(
+            decoration: BoxDecoration(color: _C.surfaceGray),
+            children: [
+              _tableCell('م', bold: true, center: true, small: true),
+              _tableCell('الصنف', bold: true, right: true, small: true),
+              _tableCell('الكمية', bold: true, center: true, small: true),
+              _tableCell('السعر', bold: true, center: true, small: true),
+              _tableCell('الإجمالي', bold: true, center: true, small: true),
+            ],
+          ),
+          // ── Data rows ───────────────────────────────────────────────────
+          for (int i = 0; i < sale.items.length; i++)
+            TableRow(
+              children: [
+                _tableCell('${i + 1}', center: true, small: true),
+                _tableCell(
+                  sale.items[i].productName,
+                  right: true,
+                  maxLines: 2,
+                ),
+                _tableCell(
+                  '${_fmtQty(sale.items[i].quantity)}\n${sale.items[i].unitName}',
+                  center: true,
+                  small: true,
+                  maxLines: 2,
+                ),
+                _tableCell(
+                  sale.items[i].unitPrice.toStringAsFixed(2),
+                  center: true,
+                  small: true,
+                ),
+                _tableCell(
+                  sale.items[i].lineTotal.toStringAsFixed(2),
+                  center: true,
+                  bold: true,
+                  small: true,
+                ),
+              ],
+            ),
+          // ── Summary row ─────────────────────────────────────────────────
+          TableRow(
+            decoration: BoxDecoration(color: _C.surfaceGray),
+            children: [
+              _tableCell('', small: true),
+              _tableCell('المجموع الفرعي',
+                  bold: true, right: true, small: true),
+              _tableCell(_fmtQty(totalQty),
+                  bold: true, center: true, small: true),
+              _tableCell('', small: true),
+              _tableCell(itemsSum.toStringAsFixed(2),
+                  bold: true, center: true, small: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableCell(
+    String text, {
+    bool bold = false,
+    bool center = false,
+    bool right = false,
+    bool small = false,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: small ? 10.5 : 11.5,
+          fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+          color: _C.text,
+          height: 1.25,
+        ),
+        textAlign: center
+            ? TextAlign.center
+            : (right ? TextAlign.right : TextAlign.left),
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  String _fmtQty(double v) {
+    if (v == v.roundToDouble()) return v.toStringAsFixed(0);
+    return v.toStringAsFixed(2);
   }
 
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
+
+// ============================================================
+// Shared widgets
+// ============================================================
 
 class _Card extends StatelessWidget {
   final Widget child;
@@ -652,38 +862,6 @@ class _InfoRow extends StatelessWidget {
       Expanded(child: Text(value, style: const TextStyle(
           fontSize: 12.5, fontWeight: FontWeight.w600, color: _C.text),
           maxLines: 1, overflow: TextOverflow.ellipsis)),
-    ]);
-  }
-}
-
-class _ItemRow extends StatelessWidget {
-  final int index;
-  final SaleItemLine item;
-  const _ItemRow({required this.index, required this.item});
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Container(
-        width: 24, height: 24,
-        decoration: BoxDecoration(color: _C.primaryLight, shape: BoxShape.circle),
-        alignment: Alignment.center,
-        child: Text('$index', style: const TextStyle(fontSize: 11,
-            fontWeight: FontWeight.bold, color: _C.primaryDark)),
-      ),
-      const SizedBox(width: 10),
-      Expanded(child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(item.productName, style: const TextStyle(fontSize: 13,
-              fontWeight: FontWeight.w600, color: _C.text),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text('${item.quantity.toInt()} ${item.unitName} × ${item.unitPrice.toStringAsFixed(2)}',
-              style: const TextStyle(fontSize: 11, color: _C.textSecondary)),
-        ],
-      )),
-      Text('${item.lineTotal.toStringAsFixed(2)} ج.م',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold,
-              color: _C.primary)),
     ]);
   }
 }

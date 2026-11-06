@@ -39,8 +39,9 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   List<ReturnableSaleItem> _saleItems = const [];
   final Map<String, double> _returnQty = {};
 
-  // Free flow — improved
+  // Free flow
   final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
   Timer? _searchDebounce;
   bool _hasSearchText = false;
   bool _loadingProducts = false;
@@ -48,11 +49,24 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   List<FreeReturnProduct> _searchResults = const [];
   final List<FreeReturnCartLine> _cart = [];
 
+  // Free flow: cart/filter view
+  bool _showOnlyCartItems = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // حمّل بعض المنتجات الافتراضية عشان يكون فيه شيء للاختيار
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchProducts(query: '');
+    });
+  }
+
   @override
   void dispose() {
     _searchDebounce?.cancel();
     _notesCtrl.dispose();
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -69,12 +83,14 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   }
 
   double get _cartTotal => _cart.fold(0.0, (s, l) => s + l.lineTotal);
+  int get _cartLinesCount =>
+      _cart.where((l) => l.quantity > 0).length;
 
   bool get _hasLines {
     if (_mode == _Mode.linked) {
       return _returnQty.values.any((q) => q > 0);
     }
-    return _cart.isNotEmpty;
+    return _cartLinesCount > 0;
   }
 
   bool get _canSave {
@@ -107,6 +123,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       _searchResults = const [];
       _searchingQuery = '';
       _hasSearchText = false;
+      _showOnlyCartItems = false;
       _searchCtrl.clear();
       _refund = 'credit_note';
       _notesCtrl.clear();
@@ -131,7 +148,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     if (picked == null && _mode == _Mode.free) {
       setState(() {
         _customer = null;
-        _refund = 'cash';
+        if (_refund == 'credit_note') _refund = 'cash';
       });
     } else if (picked != null) {
       setState(() => _customer = picked);
@@ -186,31 +203,25 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     }
   }
 
-  // ── Free flow: search (debounced) ──────────────────────────────────────
+  // ── Free flow: search ──────────────────────────────────────────────────
 
   void _onSearchChanged(String v) {
     _searchDebounce?.cancel();
     final hasText = v.trim().isNotEmpty;
     if (hasText != _hasSearchText) {
-      setState(() => _hasSearchText = hasText);
-    }
-    if (!hasText) {
       setState(() {
-        _searchResults = const [];
-        _searchingQuery = '';
+        _hasSearchText = hasText;
+        if (!hasText) _showOnlyCartItems = false;
       });
-      return;
     }
     _searchDebounce = Timer(
-      const Duration(milliseconds: 350),
+      const Duration(milliseconds: 300),
       () => _searchProducts(query: v),
     );
   }
 
   Future<void> _searchProducts({required String query}) async {
     final q = query.trim();
-    if (q.isEmpty) return;
-
     setState(() {
       _loadingProducts = true;
       _searchingQuery = q;
@@ -219,7 +230,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       final list = await widget.repo.searchFreeReturnProducts(
         companyId: widget.companyId,
         query: q,
-        limit: 40,
+        limit: 60,
       );
       if (!mounted || _searchingQuery != q) return;
       setState(() {
@@ -241,12 +252,14 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       _searchResults = const [];
       _searchingQuery = '';
       _loadingProducts = false;
+      _showOnlyCartItems = false;
     });
+    _searchFocus.requestFocus();
   }
 
   // ── Free flow: cart ────────────────────────────────────────────────────
 
-  void _addToCart(FreeReturnProduct p) {
+  void _incProduct(FreeReturnProduct p) {
     HapticFeedback.lightImpact();
     final existing = _cart.where((l) => l.product.id == p.id).firstOrNull;
     setState(() {
@@ -258,8 +271,41 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     });
   }
 
-  void _removeLine(int i) {
-    setState(() => _cart.removeAt(i));
+  void _decProduct(FreeReturnProduct p) {
+    HapticFeedback.lightImpact();
+    final existing = _cart.where((l) => l.product.id == p.id).firstOrNull;
+    if (existing == null) return;
+    setState(() {
+      if (existing.quantity <= 1) {
+        _cart.removeWhere((l) => l.product.id == p.id);
+      } else {
+        existing.quantity -= 1;
+      }
+    });
+  }
+
+  void _setProductQty(FreeReturnProduct p, double qty) {
+    final existing = _cart.where((l) => l.product.id == p.id).firstOrNull;
+    if (existing == null) {
+      if (qty > 0) {
+        setState(() => _cart.add(
+            FreeReturnCartLine(product: p, price: p.price, quantity: qty)));
+      }
+      return;
+    }
+    setState(() {
+      if (qty <= 0) {
+        _cart.removeWhere((l) => l.product.id == p.id);
+      } else {
+        existing.quantity = qty;
+      }
+    });
+  }
+
+  double _cartQtyOf(FreeReturnProduct p) {
+    return _cart
+        .where((l) => l.product.id == p.id)
+        .fold(0.0, (s, l) => s + l.quantity);
   }
 
   // ── Save ───────────────────────────────────────────────────────────────
@@ -285,7 +331,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
         }
       } else {
         for (final l in _cart) {
-          if (l.product.unitId == null) continue;
+          if (l.product.unitId == null || l.quantity <= 0) continue;
           lines.add(ReturnLineInput(
             productId: l.product.id,
             unitId: l.product.unitId!,
@@ -373,6 +419,26 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                   fontSize: 18, fontWeight: FontWeight.w800),
             ),
           ),
+          if (_mode == _Mode.free && _cartLinesCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _C.dangerLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.shopping_cart, size: 14, color: _C.danger),
+                  const SizedBox(width: 4),
+                  Text('${_cartLinesCount}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: _C.danger)),
+                ],
+              ),
+            ),
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.close, color: _C.textSecondary),
@@ -477,26 +543,33 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  //   FREE MODE — IMPROVED
+  //   FREE MODE — POS-like flow
   // ══════════════════════════════════════════════════════════════════════
 
   Widget _freeBody() {
     return Column(
       children: [
-        _freeCustomerBar(),
+        _freeCustomerChip(),
         _freeSearchField(),
-        Expanded(child: _freeContent()),
-        if (_hasSearchText && _cart.isNotEmpty) _cartSummaryBar(),
+        Expanded(
+          child: _showOnlyCartItems
+              ? _cartView()
+              : _unifiedView(),
+        ),
+        if (!_showOnlyCartItems && _cartLinesCount > 0)
+          _cartMiniBar(),
         _footerExtras(),
       ],
     );
   }
 
-  Widget _freeCustomerBar() {
+  // ── Customer chip (compact, one line) ──────────────────────────────────
+
+  Widget _freeCustomerChip() {
     final hasCustomer = _customer != null;
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: hasCustomer
             ? _C.primary.withOpacity(0.08)
@@ -513,42 +586,35 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
           Icon(
             hasCustomer ? Icons.person : Icons.warning_amber_rounded,
             color: hasCustomer ? _C.primary : _C.warning,
-            size: 20,
+            size: 18,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hasCustomer ? _customer!.name : 'بدون عميل',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: hasCustomer ? _C.primaryDark : _C.warning),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (!hasCustomer)
-                  const Text('الاسترداد نقدي فقط',
-                      style: TextStyle(
-                          fontSize: 10, color: _C.textSecondary)),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: _openCustomerPicker,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
             child: Text(
-              hasCustomer ? 'تغيير' : 'تعيين',
+              hasCustomer ? _customer!.name : 'بدون عميل — نقدي فقط',
               style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: hasCustomer ? _C.primary : _C.warning),
+                  color: hasCustomer ? _C.primaryDark : _C.warning),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          GestureDetector(
+            onTap: _openCustomerPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: hasCustomer ? _C.primary : _C.warning,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                hasCustomer ? 'تغيير' : 'تعيين',
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white),
+              ),
             ),
           ),
         ],
@@ -556,26 +622,36 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
+  // ── Search field (always visible) ──────────────────────────────────────
+
   Widget _freeSearchField() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: TextField(
         controller: _searchCtrl,
+        focusNode: _searchFocus,
         onChanged: _onSearchChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: 'ابحث باسم المنتج لإضافته...',
+          hintText: 'ابحث باسم المنتج (أو اتركه فارغاً لعرض الكل)',
+          hintStyle: const TextStyle(fontSize: 13),
           prefixIcon: const Icon(Icons.search, color: _C.textSecondary),
           suffixIcon: _hasSearchText
               ? IconButton(
                   icon: const Icon(Icons.clear, size: 20),
                   onPressed: _clearSearch,
                 )
-              : null,
+              : (_showOnlyCartItems
+                  ? IconButton(
+                      icon: const Icon(Icons.search, size: 20),
+                      onPressed: () =>
+                          setState(() => _showOnlyCartItems = false),
+                    )
+                  : null),
           filled: true,
           fillColor: _C.surfaceGray,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
@@ -585,96 +661,134 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
-  Widget _freeContent() {
-    if (_hasSearchText) {
-      if (_loadingProducts) return _searchLoadingState();
-      if (_searchResults.isEmpty) return _emptySearchState();
-      return ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-        itemCount: _searchResults.length,
-        separatorBuilder: (_, __) =>
-            const Divider(height: 1, color: _C.border),
-        itemBuilder: (_, i) => _searchResultRow(_searchResults[i]),
+  // ── Unified view: search results + cart section ────────────────────────
+
+  Widget _unifiedView() {
+    if (_loadingProducts && _searchResults.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: _C.primary),
+              SizedBox(height: 12),
+              Text('جاري التحميل...',
+                  style:
+                      TextStyle(fontSize: 13, color: _C.textSecondary)),
+            ],
+          ),
+        ),
       );
     }
 
-    if (_cart.isEmpty) return _emptyCartState();
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      itemCount: _cart.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => _cartLineCard(i),
+    final hasResults = _searchResults.isNotEmpty;
+    final hasCart = _cart.isNotEmpty;
+
+    if (!hasResults && !hasCart) {
+      return _emptyProductState();
+    }
+
+    // Show cart items filtered or all products
+    final displayList = _hasSearchText
+        ? _searchResults
+        : _cart.map((l) => l.product).toList();
+
+    final showCartBelow = _hasSearchText && hasCart;
+
+    return CustomScrollView(
+      slivers: [
+        if (displayList.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _sectionHeader(
+              _hasSearchText
+                  ? 'نتائج البحث (${displayList.length})'
+                  : 'المنتجات المتاحة',
+              right: _hasSearchText
+                  ? TextButton.icon(
+                      onPressed: _clearSearch,
+                      icon: const Icon(Icons.clear, size: 14),
+                      label: const Text('مسح',
+                          style: TextStyle(fontSize: 11)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: _C.textSecondary,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 24),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => _searchRow(displayList[i]),
+            childCount: displayList.length,
+          ),
+        ),
+        if (showCartBelow) ...[
+          SliverToBoxAdapter(
+            child: _sectionHeader(
+              'في السلة (${_cart.length} صنف · ${_fmt(_cartTotal)})',
+              top: 12,
+            ),
+          ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) => _cartLineCard(i),
+              childCount: _cart.length,
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+      ],
     );
   }
 
-  // ── Search results ─────────────────────────────────────────────────────
-
-  Widget _searchLoadingState() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: _C.primary),
-            SizedBox(height: 12),
-            Text('جاري البحث...',
-                style: TextStyle(
-                    fontSize: 13, color: _C.textSecondary)),
-          ],
-        ),
+  Widget _sectionHeader(String title, {Widget? right, double top = 0}) {
+    return Container(
+      margin: EdgeInsets.only(top: top),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      child: Row(
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: _C.text)),
+          const Spacer(),
+          if (right != null) right,
+        ],
       ),
     );
   }
 
-  Widget _emptySearchState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.search_off,
-                size: 56, color: _C.textSecondary.withOpacity(0.5)),
-            const SizedBox(height: 12),
-            Text('لا توجد نتائج لـ "$_searchingQuery"',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _C.text)),
-            const SizedBox(height: 6),
-            const Text('جرّب كلمة بحث أخرى',
-                style: TextStyle(
-                    fontSize: 12, color: _C.textSecondary)),
-          ],
-        ),
-      ),
-    );
-  }
+  // ── Search row with inline qty controls ────────────────────────────────
 
-  Widget _searchResultRow(FreeReturnProduct p) {
-    final cartQty = _cart
-        .where((l) => l.product.id == p.id)
-        .fold(0.0, (s, l) => s + l.quantity);
-
-    return Material(
+  Widget _searchRow(FreeReturnProduct p) {
+    final qty = _cartQtyOf(p);
+    return Container(
       color: Colors.white,
       child: InkWell(
-        onTap: () => _addToCart(p),
+        onTap: () => _incProduct(p),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: _C.dangerLight,
+                  color: qty > 0
+                      ? _C.success.withOpacity(0.12)
+                      : _C.dangerLight,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.inventory_2_outlined,
-                    color: _C.danger, size: 20),
+                child: Icon(
+                  qty > 0 ? Icons.check_circle : Icons.inventory_2_outlined,
+                  color: qty > 0 ? _C.success : _C.danger,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -689,70 +803,19 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(
-                          p.unitName.isEmpty ? '—' : p.unitName,
-                          style: const TextStyle(
-                              fontSize: 11, color: _C.textSecondary),
-                        ),
-                        if (cartQty > 0) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: _C.success.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'في السلة: ${_fmtNum(cartQty)}',
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: _C.success),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      '${_fmt(p.price)} / ${p.unitName.isEmpty ? "—" : p.unitName}',
+                      style: const TextStyle(
+                          fontSize: 11, color: _C.textSecondary),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    _fmt(p.price),
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _C.text),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _C.danger,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add, size: 14, color: Colors.white),
-                        SizedBox(width: 2),
-                        Text('إضافة',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              if (qty == 0)
+                _addButton()
+              else
+                _qtyStepper(p, qty),
             ],
           ),
         ),
@@ -760,7 +823,235 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
-  // ── Cart ───────────────────────────────────────────────────────────────
+  Widget _addButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: _C.danger,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add, size: 16, color: Colors.white),
+          SizedBox(width: 4),
+          Text('إضافة',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
+  Widget _qtyStepper(FreeReturnProduct p, double qty) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _stepperBtn(
+          icon: Icons.remove,
+          onTap: () => _decProduct(p),
+        ),
+        Container(
+          constraints: const BoxConstraints(minWidth: 44),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: _C.dangerLight,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            _fmtNum(qty),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: _C.danger),
+          ),
+        ),
+        _stepperBtn(
+          icon: Icons.add,
+          onTap: () => _incProduct(p),
+        ),
+      ],
+    );
+  }
+
+  Widget _stepperBtn({required IconData icon, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: _C.dangerLight,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _C.danger.withOpacity(0.3)),
+        ),
+        child: Icon(icon, size: 16, color: _C.danger),
+      ),
+    );
+  }
+
+  // ── Cart-only view (when user taps "عرض السلة") ────────────────────────
+
+  Widget _cartView() {
+    if (_cart.isEmpty) {
+      return _emptyCartState();
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+      itemCount: _cart.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (_, i) => _cartLineCard(i),
+    );
+  }
+
+  Widget _cartLineCard(int i) {
+    final line = _cart[i];
+    final lineQtyCtrl = TextEditingController(text: _fmtNum(line.quantity));
+    lineQtyCtrl.selection = TextSelection.collapsed(
+        offset: lineQtyCtrl.text.length);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _C.success.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.check_circle,
+                color: _C.success, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(line.product.name,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(
+                  '${_fmt(line.price)} / ${line.product.unitName.isEmpty ? "—" : line.product.unitName}',
+                  style: const TextStyle(
+                      fontSize: 11, color: _C.textSecondary),
+                ),
+                const SizedBox(height: 4),
+                Text('الإجمالي: ${_fmt(line.lineTotal)}',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: _C.danger)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _stepperBtn(
+                    icon: Icons.remove,
+                    onTap: () => _decProduct(line.product),
+                  ),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 44),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    child: TextField(
+                      controller: lineQtyCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d*\.?\d{0,2}')),
+                      ],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800),
+                      onChanged: (v) {
+                        final n = double.tryParse(v) ?? 0;
+                        if (n > 0) {
+                          setState(() => line.quantity = n);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: const BorderSide(color: _C.border),
+                        ),
+                      ),
+                    ),
+                  ),
+                  _stepperBtn(
+                    icon: Icons.add,
+                    onTap: () => _incProduct(line.product),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: () {
+                  setState(() => _cart.removeAt(i));
+                },
+                child: const Text('حذف',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: _C.danger,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Empty states ───────────────────────────────────────────────────────
+
+  Widget _emptyProductState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: const BoxDecoration(
+                color: _C.surfaceGray,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.search,
+                  size: 40, color: _C.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            const Text('لا توجد منتجات',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _C.text)),
+            const SizedBox(height: 6),
+            const Text('جرّب البحث بكلمة أخرى',
+                style:
+                    TextStyle(fontSize: 12, color: _C.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _emptyCartState() {
     return Center(
@@ -780,162 +1071,66 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                   size: 40, color: _C.textSecondary),
             ),
             const SizedBox(height: 16),
-            const Text('لا توجد منتجات في المرتجع',
+            const Text('لا توجد منتجات في السلة',
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: _C.text)),
             const SizedBox(height: 6),
-            const Text('ابحث في الأعلى وأضف منتجات',
-                style: TextStyle(
-                    fontSize: 12, color: _C.textSecondary)),
+            const Text('ابحث وأضف منتجات',
+                style:
+                    TextStyle(fontSize: 12, color: _C.textSecondary)),
           ],
         ),
       ),
     );
   }
 
-  Widget _cartLineCard(int i) {
-    final line = _cart[i];
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _C.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _C.dangerLight,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.inventory_2_outlined,
-                    color: _C.danger, size: 16),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  line.product.name,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _removeLine(i),
-                icon: const Icon(Icons.delete_outline,
-                    size: 20, color: _C.danger),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _QtyButton(
-                icon: Icons.remove,
-                onTap: line.quantity > 1
-                    ? () => setState(() => line.quantity -= 1)
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: TextEditingController(
-                      text: _fmtNum(line.quantity))
-                    ..selection = TextSelection.collapsed(
-                        offset: _fmtNum(line.quantity).length),
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(
-                        RegExp(r'^\d*\.?\d{0,2}')),
-                  ],
-                  textAlign: TextAlign.center,
-                  onChanged: (v) {
-                    final n = double.tryParse(v) ?? 0;
-                    if (n > 0) setState(() => line.quantity = n);
-                  },
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: '0',
-                    suffixText: line.product.unitName,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 6),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _C.border),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _QtyButton(
-                icon: Icons.add,
-                onTap: () => setState(() => line.quantity += 1),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                constraints: const BoxConstraints(minWidth: 70),
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _fmt(line.lineTotal),
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: _C.danger),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Cart mini bar (floating at bottom during search) ───────────────────
 
-  Widget _cartSummaryBar() {
+  Widget _cartMiniBar() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _C.danger.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _C.danger.withOpacity(0.25)),
+        color: _C.danger,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.shopping_cart, size: 18, color: _C.danger),
-          const SizedBox(width: 8),
-          Text('${_cart.length} منتج',
+          const Icon(Icons.shopping_cart, color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          Text('${_cartLinesCount} صنف',
               style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 8),
-          Container(width: 1, height: 14, color: _C.border),
-          const SizedBox(width: 8),
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+          Container(
+            width: 1,
+            height: 16,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: Colors.white.withOpacity(0.3),
+          ),
           Text(_fmt(_cartTotal),
               style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: _C.danger)),
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800)),
           const Spacer(),
-          TextButton(
-            onPressed: _clearSearch,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 30),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          GestureDetector(
+            onTap: () => setState(() => _showOnlyCartItems = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('عرض السلة',
+                  style: TextStyle(
+                      color: _C.danger,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
             ),
-            child: const Text('عرض السلة',
-                style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -1098,13 +1293,13 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
             const SizedBox(height: 8),
             Row(
               children: [
-                _QtyButton(
+                _stepperBtn(
                   icon: Icons.remove,
                   onTap: qty > 0
                       ? () => setState(() =>
                           _returnQty[item.id] =
                               (qty - 1).clamp(0, item.returnableQty))
-                      : null,
+                      : () {},
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -1139,13 +1334,13 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                _QtyButton(
+                _stepperBtn(
                   icon: Icons.add,
                   onTap: qty < item.returnableQty
                       ? () => setState(() =>
                           _returnQty[item.id] =
                               (qty + 1).clamp(0, item.returnableQty))
-                      : null,
+                      : () {},
                 ),
                 const SizedBox(width: 12),
                 Text(_fmt(qty * item.unitPrice),
@@ -1165,7 +1360,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
 
   Widget _footerExtras() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       color: _C.surfaceGray,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1174,23 +1369,24 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
             children: [
               const Text('الاسترداد:',
                   style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 8),
+                      fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 6),
               ...kRefundMethods.map((m) {
                 final enabled = m != 'credit_note' || _customer != null;
                 final selected = _refund == m;
                 return Padding(
-                  padding: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.only(left: 4),
                   child: ChoiceChip(
-                    label: Text(refundLabelOf(m),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: enabled
-                                ? (selected ? _C.danger : _C.text)
-                                : _C.textSecondary,
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w500)),
+                    label: Text(
+                      refundLabelOf(m),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: enabled
+                              ? (selected ? _C.danger : _C.text)
+                              : _C.textSecondary,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500),
+                    ),
                     selected: selected,
                     onSelected: enabled
                         ? (_) => setState(() => _refund = m)
@@ -1208,22 +1404,22 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
               }),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           TextField(
             controller: _notesCtrl,
             maxLines: 1,
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(fontSize: 12),
             decoration: InputDecoration(
               hintText: 'ملاحظات (اختياري)',
               hintStyle:
-                  const TextStyle(fontSize: 12, color: _C.textSecondary),
+                  const TextStyle(fontSize: 11, color: _C.textSecondary),
               isDense: true,
               filled: true,
               fillColor: Colors.white,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: _C.border),
               ),
             ),
@@ -1235,7 +1431,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
 
   Widget _footer() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Row(
         children: [
           Column(
@@ -1539,34 +1735,6 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-class _QtyButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _QtyButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: onTap == null ? _C.surfaceGray : _C.dangerLight,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: onTap == null
-                  ? _C.border
-                  : _C.danger.withOpacity(0.3)),
-        ),
-        child: Icon(icon,
-            size: 18,
-            color: onTap == null ? _C.textSecondary : _C.danger),
-      ),
-    );
-  }
-}
 
 String _fmt(double v) {
   final f = NumberFormat('#,##0.00', 'en');

@@ -33,4 +33,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # ⚠️ assets/fonts/ اتحذف مؤقتاً — هيتم تحميلها في الـ workflow تلقائياً
+  assets:
+    - assets/fonts/    # ⬅️ هذا هو السطر السحري لحل مشكلة الويب

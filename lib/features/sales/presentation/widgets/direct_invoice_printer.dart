@@ -20,7 +20,6 @@ class DirectInvoicePrinter {
     _showLoading(context);
 
     try {
-      // 1. البحث عن طابعات
       final printers = await BluetoothPrinterService.discoverPrinters();
 
       if (printers.isEmpty) {
@@ -30,7 +29,6 @@ class DirectInvoicePrinter {
       if (!context.mounted) return;
       Navigator.of(context).pop();
 
-      // 2. اختيار الطابعة
       final selected = await showModalBottomSheet<PrinterDevice>(
         context: context,
         isScrollControlled: true,
@@ -42,13 +40,11 @@ class DirectInvoicePrinter {
       if (!context.mounted) return;
       _showLoading(context);
 
-      // 3. الاتصال
       final connected = await BluetoothPrinterService.connect(selected);
       if (!connected) {
         throw 'تعذر الاتصال بالطابعة. تأكد من تشغيلها.';
       }
 
-      // 4. بناء أوامر ESC/POS
       final bytes = await _buildEscPosBytes(
         sale: sale,
         companyName: companyName,
@@ -56,11 +52,9 @@ class DirectInvoicePrinter {
         companyPhone: companyPhone,
       );
 
-      // 5. إرسال للطباعة
       final sent = await BluetoothPrinterService.writeBytes(bytes);
       if (!sent) throw 'فشل إرسال البيانات للطابعة';
 
-      // 6. قطع الاتصال
       await BluetoothPrinterService.disconnect();
 
       if (!context.mounted) return;
@@ -105,7 +99,6 @@ class DirectInvoicePrinter {
     final generator = Generator(PaperSize.mm80, profile);
     final List<int> bytes = <int>[];
 
-    // ضبط ترميز عربي (CP864 = 22)
     bytes.addAll(<int>[0x1B, 0x74, 22]);
 
     bytes.addAll(generator.text(
@@ -168,7 +161,6 @@ class DirectInvoicePrinter {
     }
     bytes.addAll(generator.hr());
 
-    // جدول المنتجات
     bytes.addAll(generator.row([
       PosColumn(text: 'الإجمالي', width: 3, styles: const PosStyles(align: PosAlign.center, bold: true, fontType: PosFontType.fontB)),
       PosColumn(text: 'السعر', width: 2, styles: const PosStyles(align: PosAlign.center, bold: true, fontType: PosFontType.fontB)),
@@ -277,7 +269,7 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
                 separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE0E0E0)),
                 itemBuilder: (_, i) {
                   final d = widget.printers[i];
-                  // ⬇️⬇️ معالجة null للـ name و address
+                  // ✅ معالجة null للـ name و address
                   final displayName = d.name ?? 'طابعة غير معروفة';
                   final displayAddress = d.address ?? 'بدون عنوان';
                   return ListTile(

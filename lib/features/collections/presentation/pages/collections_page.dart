@@ -78,7 +78,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
     }
   }
 
-  double get _total => _entries.fold(0.0, (s, e) => s + e.amount);
+  double get _total => _entries.fold(0.0, (s, e) => s + (e.amount ?? 0));
 
   Future<void> _openNewPayment() async {
     final saved = await showModalBottomSheet<bool>(

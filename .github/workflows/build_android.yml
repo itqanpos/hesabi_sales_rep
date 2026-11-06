@@ -28,21 +28,15 @@ jobs:
           channel: stable
           cache: false
 
-      - name: Verify Flutter & Dart versions
-        run: |
-          echo "=== FLUTTER ===" && flutter --version
-          echo "=== DART ===" && dart --version
-
+      # ⬇️⬇️ تحميل Cairo (المتغير — اللي كان شغال)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -fL -o assets/fonts/Cairo-Regular.ttf \
-            "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           echo "✅ Fonts downloaded:"
           ls -la assets/fonts/
 
-      # ⬇️⬇️ إعادة إنشاء android/ من الصفر (v2 guaranteed)
       - name: Force recreate Android platform
         run: |
           rm -rf android
@@ -65,23 +59,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # ⬇️⬇️ حذف widget_test.dart (منع MyApp error)
       - name: Remove default test & add sanity test
         run: |
           rm -rf test
           mkdir -p test
           cat > test/sanity_test.dart <<'EOF'
           import 'package:flutter_test/flutter_test.dart';
-
           void main() {
-            test('sanity check - project compiles', () {
-              expect(2 + 2, 4);
-            });
+            test('sanity check', () => expect(2 + 2, 4));
           }
           EOF
-          echo "✅ Test folder cleaned"
 
-      # ⬇️⬇️ إجبار SDK versions (زي Hesabi)
       - name: Set minSdk 23 / compileSdk 36 / targetSdk 36
         run: |
           for f in android/app/build.gradle android/app/build.gradle.kts; do
@@ -100,10 +88,8 @@ jobs:
               sed -i 's/targetSdk = [0-9]*/targetSdk = 36/' "$f" || true
             fi
           done
-          echo "✅ SDK versions set"
 
-      # ⬇️⬇️⬇️ السر الذهبي — patch كل plugins على compileSdk 36
-      - name: Patch compileSdk for ALL plugins (app_links fix)
+      - name: Patch compileSdk for ALL plugins
         run: |
           set -e
           PUB_CACHE_ROOT="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev"
@@ -138,13 +124,9 @@ jobs:
                   if text != original:
                       f.write_text(text)
                       patched += 1
-                      print(f'  patched: {pkg.name}/{fname}')
-          print('---')
-          print(f'Scanned: {total} files')
-          print(f'Patched: {patched} files')
+          print(f'Scanned: {total}, Patched: {patched}')
           PY
 
-      # ⬇️⬇️ إضافة أذونات AndroidManifest
       - name: Add Android permissions
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
@@ -166,12 +148,6 @@ jobs:
             sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
             sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
           fi
-          if ! grep -q 'WRITE_EXTERNAL_STORAGE' "$MANIFEST"; then
-            sed -i '/<application/i\    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />' "$MANIFEST"
-          fi
-          if ! grep -q 'android.hardware.camera' "$MANIFEST"; then
-            sed -i '/<application/i\    <uses-feature android:name="android.hardware.camera" android:required="false" />' "$MANIFEST"
-          fi
           if ! grep -q 'EnableImpeller' "$MANIFEST"; then
             python3 - <<'PY'
           import pathlib
@@ -181,9 +157,7 @@ jobs:
           p.write_text(text)
           PY
           fi
-          echo "✅ Permissions added"
 
-      # ⬇️⬇️ ProGuard rules
       - name: Create ProGuard rules
         run: |
           mkdir -p android/app
@@ -193,7 +167,6 @@ jobs:
           -keep class com.google.android.libraries.barhopper.** { *; }
           -keep class dev.steenbakker.mobile_scanner.** { *; }
           EOF
-          echo "✅ ProGuard rules created"
 
       - name: Link ProGuard rules
         run: |
@@ -204,7 +177,6 @@ jobs:
               if not p.exists(): continue
               text = p.read_text()
               if 'proguard-rules.pro' in text:
-                  print(f"{fname}: already linked")
                   continue
               if fname.endswith('.kts'):
                   text = re.sub(
@@ -219,13 +191,11 @@ jobs:
                       text, count=1,
                   )
               p.write_text(text)
-              print(f"{fname}: linked")
           PY
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # ⬇️⬇️⬇️ البناء
       - name: Build Release APK
         run: |
           flutter build apk --release \

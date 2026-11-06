@@ -48,7 +48,50 @@ jobs:
           }
           EOF
 
-      # ⬇️⬇️ توليد أيقونات الويب
+      # ⬇️⬇️⬇️ حماية تلقائية للوجو
+      - name: Ensure logo exists (auto-generate if missing)
+        run: |
+          mkdir -p assets/images
+          if [ -f "assets/images" ]; then
+            echo "⚠️  assets/images exists as file — removing"
+            rm -f "assets/images"
+            mkdir -p assets/images
+          fi
+
+          if [ ! -f "assets/images/logo.png" ]; then
+            echo "⚠️  logo.png not found — generating placeholder (Hesabi green)"
+            python3 <<'PY'
+import struct, zlib
+
+def create_png(width, height, r, g, b):
+    signature = b'\x89PNG\r\n\x1a\n'
+    def chunk(t, d):
+        return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    ihdr = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    raw = b''
+    for y in range(height):
+        row = b'\x00'
+        for x in range(width):
+            cx, cy = width/2, height/2
+            dist = ((x-cx)**2 + (y-cy)**2)**0.5
+            if dist < width * 0.35:
+                row += bytes([255, 255, 255])
+            elif dist < width * 0.42:
+                row += bytes([0, 105, 92])
+            else:
+                row += bytes([r, g, b])
+        raw += row
+    return signature + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
+
+with open('assets/images/logo.png', 'wb') as f:
+    f.write(create_png(512, 512, 0, 137, 123))
+print("✅ Placeholder logo created")
+PY
+          else
+            echo "✅ logo.png found:"
+            ls -la assets/images/logo.png
+          fi
+
       - name: Generate Launcher Icons
         run: dart run flutter_launcher_icons
 

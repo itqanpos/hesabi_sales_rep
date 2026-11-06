@@ -205,8 +205,11 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
           else
             const SizedBox(width: 8),
           const Expanded(
-            child: Text('تسجيل دفعة',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            child: Text(
+              'تسجيل دفعة',
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w800),
+            ),
           ),
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
@@ -235,8 +238,8 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: _C.surfaceGray,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none,
@@ -253,14 +256,18 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
         else if (_customersError != null)
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(_customersError!,
-                style: const TextStyle(color: _C.danger)),
+            child: Text(
+              _customersError!,
+              style: const TextStyle(color: _C.danger),
+            ),
           )
         else if (_customers.isEmpty)
           const Padding(
             padding: EdgeInsets.all(24),
-            child: Text('لا يوجد عملاء',
-                style: TextStyle(color: _C.textSecondary)),
+            child: Text(
+              'لا يوجد عملاء',
+              style: TextStyle(color: _C.textSecondary),
+            ),
           )
         else
           Flexible(
@@ -273,9 +280,13 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
                 final c = _customers[i];
                 return ListTile(
                   onTap: () => _selectCustomer(c),
-                  title: Text(c.name,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: c.phone != null ? Text(c.phone!) : null,
+                  title: Text(
+                    c.name,
+                    style:
+                        const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle:
+                      c.phone != null ? Text(c.phone!) : null,
                   trailing: Text(
                     _fmt(c.balance),
                     style: TextStyle(
@@ -312,15 +323,16 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              FilteringTextInputFormatter.allow(
+                  RegExp(r'^\d*\.?\d{0,2}')),
             ],
             decoration: InputDecoration(
               hintText: '0.00',
               suffixText: 'ج.م',
               filled: true,
               fillColor: _C.surfaceGray,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none,
@@ -357,7 +369,8 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
       decoration: BoxDecoration(
         color: _C.primaryLight,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _C.primary.withValues(alpha: 0.35)),
+        border:
+            Border.all(color: _C.primary.withOpacity(0.35)),
       ),
       child: Row(
         children: [
@@ -367,26 +380,35 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(c.name,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(
+                  c.name,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800),
+                ),
                 if (c.phone != null)
-                  Text(c.phone!,
-                      style: const TextStyle(
-                          fontSize: 12, color: _C.textSecondary)),
+                  Text(
+                    c.phone!,
+                    style: const TextStyle(
+                        fontSize: 12, color: _C.textSecondary),
+                  ),
               ],
             ),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('الرصيد',
-                  style: TextStyle(fontSize: 11, color: _C.textSecondary)),
-              Text(_fmt(c.balance),
-                  style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: _C.danger)),
+              const Text(
+                'الرصيد',
+                style: TextStyle(
+                    fontSize: 11, color: _C.textSecondary),
+              ),
+              Text(
+                _fmt(c.balance),
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _C.danger),
+              ),
             ],
           ),
         ],
@@ -415,8 +437,11 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
           color: _C.surfaceGray,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Text('لا توجد فواتير غير مدفوعة',
-            style: TextStyle(fontSize: 13, color: _C.textSecondary)),
+        child: const Text(
+          'لا توجد فواتير غير مدفوعة',
+          style:
+              TextStyle(fontSize: 13, color: _C.textSecondary),
+        ),
       );
     }
     return Column(
@@ -434,45 +459,60 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
                 children: [
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
-                        Text('#${inv.invoiceNumber}',
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w700)),
-                        Text(_fmtDate(inv.saleDate),
-                            style: const TextStyle(
-                                fontSize: 11, color: _C.textSecondary)),
+                        Text(
+                          '#${inv.invoiceNumber}',
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          _fmtDate(inv.saleDate),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: _C.textSecondary),
+                        ),
                       ],
                     ),
                   ),
-                  Text(_fmt(inv.remaining),
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: _C.warning)),
+                  Text(
+                    _fmt(inv.remaining),
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: _C.warning),
+                  ),
                 ],
               ),
             )),
         if (_invoices.length > 5)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text('+ ${_invoices.length - 5} فاتورة أخرى',
-                style: const TextStyle(
-                    fontSize: 12, color: _C.textSecondary)),
+            child: Text(
+              '+ ${_invoices.length - 5} فاتورة أخرى',
+              style: const TextStyle(
+                  fontSize: 12, color: _C.textSecondary),
+            ),
           ),
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('إجمالي المتبقي',
-                  style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w700)),
-              Text(_fmt(_invoiceRemaining),
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: _C.danger)),
+              const Text(
+                'إجمالي المتبقي',
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              Text(
+                _fmt(_invoiceRemaining),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _C.danger),
+              ),
             ],
           ),
         ),
@@ -493,9 +533,11 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
           selectedColor: _C.primaryLight,
           labelStyle: TextStyle(
             color: selected ? _C.primaryDark : _C.text,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight:
+                selected ? FontWeight.w700 : FontWeight.w500,
           ),
-          side: BorderSide(color: selected ? _C.primary : _C.border),
+          side: BorderSide(
+              color: selected ? _C.primary : _C.border),
           backgroundColor: Colors.white,
         );
       }).toList(),
@@ -509,7 +551,8 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
         width: double.infinity,
         height: 52,
         child: ElevatedButton(
-          onPressed: (_selectedCustomer == null || _saving) ? null : _save,
+          onPressed:
+              (_selectedCustomer == null || _saving) ? null : _save,
           style: ElevatedButton.styleFrom(
             backgroundColor: _C.primary,
             foregroundColor: Colors.white,
@@ -525,23 +568,30 @@ class _NewPaymentSheetState extends State<NewPaymentSheet> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2.4, color: Colors.white),
                 )
-              : Text(_selectedCustomer == null ? 'اختر عميلاً' : 'حفظ الدفعة',
+              : Text(
+                  _selectedCustomer == null
+                      ? 'اختر عميلاً'
+                      : 'حفظ الدفعة',
                   style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800)),
+                      fontSize: 15, fontWeight: FontWeight.w800),
+                ),
         ),
       ),
     );
   }
 
-  Widget _label(String text) => Text(text,
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700));
+  Widget _label(String text) => Text(
+        text,
+        style: const TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700),
+      );
 
   InputDecoration _inputDec(String hint) => InputDecoration(
         hintText: hint,
         filled: true,
         fillColor: _C.surfaceGray,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -556,7 +606,8 @@ String _fmt(double v) {
   return '${f.format(v)} ج.م';
 }
 
-String _fmtDate(DateTime d) => DateFormat('yyyy/MM/dd', 'en').format(d);
+String _fmtDate(DateTime d) =>
+    DateFormat('yyyy/MM/dd', 'en').format(d);
 
 class _C {
   static const primary = Color(0xFF00897B);

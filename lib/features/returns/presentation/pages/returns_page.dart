@@ -426,7 +426,6 @@ String _fmtDate(DateTime d) => DateFormat('yyyy/MM/dd', 'en').format(d);
 
 class _C {
   static const primary = Color(0xFF00897B);
-  static const primaryDark = Color(0xFF00695C);
   static const success = Color(0xFF2E7D32);
   static const warning = Color(0xFFE65100);
   static const danger = Color(0xFFC62828);

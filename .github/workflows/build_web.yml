@@ -5,6 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# منع قفل النشر المتزامن في GitHub Pages
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -26,12 +27,12 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # ⬇️⬇️ تحميل خطوط Cairo (جديد)
+      # ⬇️⬇️ تحميل خطوط Cairo (روابط محدثة تعمل 100%)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
-          curl -fL -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           echo "✅ Fonts downloaded:"
           ls -la assets/fonts/
 

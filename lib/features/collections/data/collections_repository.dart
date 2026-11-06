@@ -42,7 +42,6 @@ class CollectionsRepository {
         .toList();
   }
 
-  /// فواتير العميل — للمرجعية فقط (بدون "متبقي")
   Future<List<CustomerInvoice>> getCustomerInvoices({
     required String companyId,
     required String customerId,
@@ -58,7 +57,7 @@ class CollectionsRepository {
         .toList();
   }
 
-  /// ⚠️ deprecated — استخدم getCustomerInvoices
+  // Deprecated (بس سايبينها عشان مفيش حاجة تكسر)
   Future<List<UnpaidInvoice>> getCustomerUnpaidInvoices({
     required String companyId,
     required String customerId,

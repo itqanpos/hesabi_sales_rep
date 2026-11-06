@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write       # ⬅️ مهم: للسماح بإنشاء Releases
+  contents: write       # ضروري لإنشاء Releases
 
 concurrency:
   group: flutter-apk-${{ github.ref }}
@@ -202,14 +202,17 @@ jobs:
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Collect APK
+      # ⬇️⬇️⬇️ اسم ثابت للـ APK (رابط تحميل مباشر دائم)
+      - name: Collect APK (stable filename)
         run: |
           mkdir -p build/apk
           cp build/app/outputs/flutter-apk/app-release.apk \
-             "build/apk/hesabi-sales-rep-build${{ github.run_number }}.apk"
-          ls -la build/apk/
+             "build/apk/hesabi-sales-rep.apk"
+          SIZE=$(du -h build/apk/hesabi-sales-rep.apk | cut -f1)
+          echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
+          echo "✅ APK ready: $SIZE"
 
-      # ⬇️⬇️⬇️ جديد: رفع الـ Artifact (30 يوم)
+      # ⬇️ Artifact للاحتفاظ المؤقت (30 يوم)
       - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -218,58 +221,23 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # ⬇️⬇️⬇️ جديد: نشر في Releases (دائم + سهل الوصول)
-      - name: Publish to Releases
+      # ⬇️⬇️⬇️ Release مع tag ثابت `apk-latest`
+      - name: Publish to Releases (apk-latest)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: "Hesabi Sales Rep APK — Latest (Build #${{ github.run_number }})"
+          name: "Hesabi Sales Rep APK - آخر إصدار"
           body: |
             ## 📱 Hesabi Sales Rep — آخر إصدار
 
-            **Build Number:** #${{ github.run_number }}
+            **رقم البناء:** #${{ github.run_number }}
+            **تاريخ البناء:** ${{ github.event.head_commit.timestamp || 'auto' }}
+            **حجم الملف:** ${{ env.APK_SIZE }}
             **Commit:** `${{ github.sha }}`
-            **Built from:** `${{ github.ref_name }}`
-            **Date:** ${{ github.event.head_commit.timestamp || 'auto' }}
-            **Size:** ${{ env.APK_SIZE }}
 
-            ### 📥 كيفية التثبيت:
-            1. حمّل ملف **`.apk`** من الأسفل
-            2. افتحه على هاتف Android
-            3. اسمح بـ "تثبيت من مصادر غير معروفة"
-            4. ثبّت وافتح التطبيق
+            ---
 
-            ### ✨ المميزات:
-            - ✅ تسجيل دخول (إيميل أو كود موظف)
-            - ✅ نقطة بيع كاملة
-            - ✅ تحصيلات وعملاء وكشوف حساب
-            - ✅ مرتجعات (حر + مرتبط بفاتورة)
-            - ✅ تقارير شاملة (مبيعات/تحصيلات/مديونيات)
-            - ✅ زيارات GPS
-            - ✅ أهداف وعمولات
-            - ✅ طباعة حرارية (بلوتوث)
-            - ✅ إعدادات الطابعة (حجم/خط)
+            ### 📥 رابط التحميل المباشر (دائم):
+            [**اضغط هنا لتحميل أحدث نسخة**](https://github.com/itqanpos/hesabi_sales_rep/releases/latest/download/hesabi-sales-rep.apk)
 
-            ### ⚠️ ملاحظات:
-            - APK موقّع بـ debug key (للاختبار)
-            - يعمل على Android 6.0+ (API 23+)
-          files: build/apk/*.apk
-          make_latest: true
-          draft: false
-          prerelease: true
-
-      - name: Summary
-        run: |
-          SIZE=$(du -h build/apk/*.apk | cut -f1)
-          {
-            echo "## ✅ تم بناء APK بنجاح"
-            echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| **رقم البناء** | #${{ github.run_number }} |"
-            echo "| **حجم APK** | $SIZE |"
-            echo ""
-            echo "### 📥 التحميل:"
-            echo "- **Artifact (30 يوم):** أسفل الصفحة في قسم Artifacts"
-            echo "- **Release (دائم):** [اضغط هنا](../../releases/tag/apk-latest)"
-          } >> $GITHUB_STEP_SUMMARY
+            **أو انسخ هذا الرابط للمفضلة:**

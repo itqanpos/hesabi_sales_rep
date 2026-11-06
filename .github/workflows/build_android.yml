@@ -41,23 +41,22 @@ jobs:
             flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
           fi
 
-      - name: Ensure AndroidManifest has permissions
+      - name: Fix v1 embedding issue in AndroidManifest
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if ! grep -q "BLUETOOTH_CONNECT" "$MANIFEST"; then
-            echo "🔧 Adding permissions..."
-            sed -i 's#</manifest>#    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n</manifest>#' "$MANIFEST"
-          fi
+          # استبدال أي إشارة لـ v1 بـ v2 (إذا وجدت)
+          sed -i 's#io.flutter.app.FlutterApplication#${applicationName}#g' "$MANIFEST"
+          sed -i 's#io.flutter.app.android.SplashScreenUntilFirstFrame#flutterEmbedding#g' "$MANIFEST"
+          echo "✅ Manifest fixed."
 
-      # ⬇️⬇️ تحميل خطوط Cairo تلقائياً
+      # ⬇️⬇️ تحميل خطوط Cairo من مستودع Google Fonts الرسمي ⬇️⬇️
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -L -o assets/fonts/Cairo-Regular.ttf \
-            "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
-          # نسختين: Regular و Bold من نفس ملف المتغير
-          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
-          echo "✅ Fonts downloaded"
+          # تحميل ملفات الخطوط (Regular & Bold) إلى مجلد assets/fonts
+          curl -L -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
+          curl -L -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+          echo "✅ Fonts downloaded to assets/fonts/"
           ls -la assets/fonts/
 
       - name: Install dependencies

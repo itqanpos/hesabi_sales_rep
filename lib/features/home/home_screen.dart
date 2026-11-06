@@ -322,13 +322,24 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ⬇️⬇️ جديد: دالة فتح التقارير
   void _openReports() {
     if (_repId == null) {
       _showMessage('حسابك غير مربوط كمندوب.');
       return;
     }
     context.push('/reports', extra: {
+      'companyId': _selectedCompanyId,
+      'salesRepId': _repId,
+    });
+  }
+
+  // ⬇️⬇️ جديد: دالة فتح الزيارات
+  void _openVisits() {
+    if (_repId == null) {
+      _showMessage('حسابك غير مربوط كمندوب.');
+      return;
+    }
+    context.push('/visits', extra: {
       'companyId': _selectedCompanyId,
       'salesRepId': _repId,
     });
@@ -353,9 +364,9 @@ class _HomeScreenState extends State<HomeScreen> {
             case 'custody':
               _showMessage('شاشة العهدة - قريباً');
             case 'visits':
-              _showMessage('شاشة الزيارات - قريباً');
+              _openVisits(); // ⬅️ تعديل هنا
             case 'reports':
-              _openReports(); // ⬅️ تعديل هنا
+              _openReports();
             case 'admin_reps':
               context.push('/admin/reps', extra: _selectedCompanyId);
             case 'logout':

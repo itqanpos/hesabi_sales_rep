@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -11,6 +12,8 @@ class PdfInvoiceBuilder {
     required String companyName,
     required String branchName,
     required String companyPhone,
+    String? repName,
+    String? logoUrl,  // ⬅️ جديد: لوجو الشركة
   }) async {
     final fontRegular = pw.Font.ttf(
         await rootBundle.load('assets/fonts/Cairo-Regular.ttf'));
@@ -22,10 +25,24 @@ class PdfInvoiceBuilder {
       bold: fontBold,
     );
 
-    // ⬇️⬇️⬇️ التغيير الأساسي: 80mm بدل A4
-    // ارتفاع ديناميكي بناءً على عدد المنتجات
+    // ✅ تحميل لوجو الشركة من URL (إن وُجد)
+    pw.Image? companyLogo;
+    if (logoUrl != null && logoUrl.trim().isNotEmpty) {
+      try {
+        final response = await http.get(Uri.parse(logoUrl));
+        if (response.statusCode == 200) {
+          companyLogo = pw.Image(
+            pw.MemoryImage(response.bodyBytes),
+            height: 45,
+          );
+        }
+      } catch (_) {
+        // تجاهل — الفاتورة تُطبع بدون لوجو
+      }
+    }
+
     final lineCount = sale.items.length;
-    final baseMm = 160.0 + (lineCount * 12.0);
+    final baseMm = 180.0 + (lineCount * 14.0);
     final pageFormat = PdfPageFormat(
       80 * PdfPageFormat.mm,
       baseMm * PdfPageFormat.mm,
@@ -53,9 +70,10 @@ class PdfInvoiceBuilder {
                 companyName: companyName,
                 branchName: branchName,
                 companyPhone: companyPhone,
+                logo: companyLogo,  // ⬅️ لوجو الشركة
               ),
               pw.SizedBox(height: 6),
-              _buildMetaBlock(sale),
+              _buildMetaBlock(sale, repName: repName),
               pw.SizedBox(height: 6),
               _divider(),
               pw.SizedBox(height: 4),
@@ -76,16 +94,21 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   الرأس (مختصر — إيصال ضيق)
+  //   الرأس — لوجو الشركة فقط (بدون لوجو التطبيق)
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildHeader({
     required String title,
     required String companyName,
     required String branchName,
     required String companyPhone,
+    required pw.Image? logo,
   }) {
     return pw.Column(
       children: [
+        if (logo != null) ...[
+          pw.Center(child: logo),
+          pw.SizedBox(height: 4),
+        ],
         pw.Text(
           companyName,
           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
@@ -103,16 +126,19 @@ class PdfInvoiceBuilder {
             textAlign: pw.TextAlign.center,
           ),
         pw.SizedBox(height: 4),
-        pw.Container(
-          padding:
-              const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.black, width: 0.8),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
-          ),
-          child: pw.Text(
-            title,
-            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+        pw.Center(
+          child: pw.Container(
+            padding:
+                const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.black, width: 0.8),
+              borderRadius:
+                  const pw.BorderRadius.all(pw.Radius.circular(2)),
+            ),
+            child: pw.Text(
+              title,
+              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+            ),
           ),
         ),
       ],
@@ -120,10 +146,9 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   بيانات الفاتورة (رقم، تاريخ، عميل)
+  //   بيانات الفاتورة (مع المندوب)
   // ═══════════════════════════════════════════════════════════════════════════
-  static pw.Widget _buildMetaBlock(SaleDetail sale) {
-    // اسم اليوم بالعربي + أرقام إنجليزية (بدون مربعات)
+  static pw.Widget _buildMetaBlock(SaleDetail sale, {String? repName}) {
     final dayName = DateFormat('EEEE', 'ar').format(sale.saleDate);
     final datePart = DateFormat('yyyy/MM/dd', 'en').format(sale.saleDate);
     final hour = sale.saleDate.hour;
@@ -138,6 +163,8 @@ class PdfInvoiceBuilder {
       children: [
         _metaRow('رقم الفاتورة', sale.invoiceNumber, emphasized: true),
         _metaRow('التاريخ', formattedDate),
+        if (repName != null && repName.trim().isNotEmpty)
+          _metaRow('المندوب', repName),
         if (sale.customerName.isNotEmpty)
           _metaRow('العميل', sale.customerName),
         if (sale.customerPhone != null && sale.customerPhone!.isNotEmpty)
@@ -154,7 +181,7 @@ class PdfInvoiceBuilder {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.SizedBox(
-            width: 50,
+            width: 55,
             child: pw.Text(
               '$label:',
               style: pw.TextStyle(
@@ -181,15 +208,15 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   جدول المنتجات (5 أعمدة — عرض 80mm)
+  //   جدول المنتجات — معكوس
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildItemsTable(SaleDetail sale) {
     final columnWidths = <int, pw.TableColumnWidth>{
-      0: const pw.FixedColumnWidth(14),   // م
-      1: const pw.FlexColumnWidth(3),     // الصنف
-      2: const pw.FixedColumnWidth(30),   // الكمية
-      3: const pw.FixedColumnWidth(32),   // السعر
-      4: const pw.FixedColumnWidth(40),   // الإجمالي
+      0: const pw.FixedColumnWidth(40),
+      1: const pw.FixedColumnWidth(32),
+      2: const pw.FixedColumnWidth(30),
+      3: const pw.FlexColumnWidth(3),
+      4: const pw.FixedColumnWidth(14),
     };
 
     double totalQuantity = 0;
@@ -201,11 +228,11 @@ class PdfInvoiceBuilder {
       pw.TableRow(
         decoration: const pw.BoxDecoration(color: PdfColors.grey300),
         children: [
-          _cell('م', bold: true, center: true),
-          _cell('الصنف', bold: true, right: true),
-          _cell('الكمية', bold: true, center: true),
-          _cell('السعر', bold: true, center: true),
           _cell('الإجمالي', bold: true, center: true),
+          _cell('السعر', bold: true, center: true),
+          _cell('الكمية', bold: true, center: true),
+          _cell('الصنف', bold: true, right: true),
+          _cell('م', bold: true, center: true),
         ],
       ),
     ];
@@ -214,12 +241,14 @@ class PdfInvoiceBuilder {
       final line = sale.items[i];
       rows.add(pw.TableRow(
         children: [
-          _cell('${i + 1}', center: true),
-          _cell(line.productName, right: true),
-          _cell('${_formatQty(line.quantity)}\n${line.unitName}',
-              center: true),
-          _cell(_money(line.unitPrice), center: true),
           _cell(_money(line.lineTotal), center: true, bold: true),
+          _cell(_money(line.unitPrice), center: true),
+          _cell(
+            '${_formatQty(line.quantity)}\n${line.unitName}',
+            center: true,
+          ),
+          _cell(line.productName, right: true),
+          _cell('${i + 1}', center: true),
         ],
       ));
     }
@@ -227,11 +256,11 @@ class PdfInvoiceBuilder {
     rows.add(pw.TableRow(
       decoration: const pw.BoxDecoration(color: PdfColors.grey100),
       children: [
-        _cell('', center: true),
-        _cell('المجموع الفرعي', bold: true, right: true),
-        _cell(_formatQty(totalQuantity), center: true, bold: true),
-        _cell('', center: true),
         _cell(_money(sale.total), center: true, bold: true),
+        _cell('', center: true),
+        _cell(_formatQty(totalQuantity), center: true, bold: true),
+        _cell('المجموع الفرعي', bold: true, right: true),
+        _cell('', center: true),
       ],
     ));
 
@@ -264,9 +293,6 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   الإجماليات (في مربع — زي صورة Hesabi)
-  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildTotalsSection(SaleDetail sale) {
     final remaining = sale.total - sale.paidAmount;
 
@@ -330,9 +356,6 @@ class PdfInvoiceBuilder {
   static pw.Widget _divider() =>
       pw.Container(height: 0.5, color: PdfColors.grey600);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   التذييل (بدون italic + بدون تنوين = بدون مربعات)
-  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildFooter() {
     return pw.Center(
       child: pw.Text(
@@ -343,9 +366,6 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
   static String _money(double value) =>
       NumberFormat('#,##0.00', 'en').format(value);
 

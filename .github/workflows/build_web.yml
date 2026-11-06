@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# ⬇️⬇️ جديد: منع قفل النشر المتزامن
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pages: write
@@ -52,4 +57,4 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
         with:
-          timeout: 1200000
+          timeout: 600000

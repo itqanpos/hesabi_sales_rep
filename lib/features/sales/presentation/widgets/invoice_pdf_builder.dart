@@ -12,7 +12,6 @@ class PdfInvoiceBuilder {
     required String branchName,
     required String companyPhone,
   }) async {
-    // ⬇️⬇️ Cairo (نفس ما كان شغال)
     final fontRegular = pw.Font.ttf(
         await rootBundle.load('assets/fonts/Cairo-Regular.ttf'));
     final fontBold =
@@ -28,7 +27,7 @@ class PdfInvoiceBuilder {
 
     final document = pw.Document(
       theme: theme,
-      title: 'فاتورة ${sale.invoiceNumber ?? ''}',
+      title: 'Invoice ${sale.invoiceNumber ?? ''}',
       author: companyName,
     );
 
@@ -100,11 +99,27 @@ class PdfInvoiceBuilder {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   التصحيح الأساسي #1: التاريخ — اسم اليوم بالعربي + أرقام إنجليزية
+  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildMetaBlock(SaleDetail sale) {
-    // ⬇️⬇️ اسم اليوم بالعربي + الأرقام بالإنجليزي (0-9)
+    // ✅ اسم اليوم فقط بالعربي (يرندر بشكل صحيح)
     final dayName = DateFormat('EEEE', 'ar').format(sale.saleDate);
-    final dateStr = DateFormat('yyyy/MM/dd — hh:mm a', 'en').format(sale.saleDate);
-    final formattedDate = '$dayName، $dateStr';
+
+    // ✅ التاريخ والأرقام بالإنجليزية (0-9 موجودة في Cairo)
+    final datePart = DateFormat('yyyy/MM/dd', 'en').format(sale.saleDate);
+
+    // ✅ الوقت بأرقام إنجليزية + ص/م عربية
+    final hour = sale.saleDate.hour;
+    final hour12 = hour == 0
+        ? 12
+        : (hour > 12 ? hour - 12 : hour);
+    final minute = sale.saleDate.minute.toString().padLeft(2, '0');
+    final ampm = hour >= 12 ? 'م' : 'ص';
+    final timePart =
+        '${hour12.toString().padLeft(2, '0')}:$minute $ampm';
+
+    final formattedDate = '$dayName $datePart - $timePart';
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -136,7 +151,7 @@ class PdfInvoiceBuilder {
           pw.SizedBox(width: 4),
           pw.Expanded(
             child: pw.Text(
-              value ?? '—',
+              value ?? '-',
               style: pw.TextStyle(
                 fontSize: 10,
                 fontWeight: emphasized
@@ -285,15 +300,20 @@ class PdfInvoiceBuilder {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //   التصحيح الأساسي #2: التذييل — بدون italic + بدون تنوين
+  // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildFooter() {
     return pw.Center(
       child: pw.Text(
-        // ⬇️⬇️ بدون تنوين (شكرا بدل شكراً)
+        // ✅ "شكرا" بدون تنوين (Cairo يدعم الحروف لكن التنوين يسبب مشاكل)
+        // ✅ بدون fontStyle: italic (Cairo ليس له نسخة italic)
         'شكرا لتعاملكم معنا',
-        style: pw.TextStyle(
-            fontSize: 10,
-            fontStyle: pw.FontStyle.italic,
-            color: PdfColors.black),
+        style: const pw.TextStyle(
+          fontSize: 10,
+          color: PdfColors.black,
+        ),
+        textAlign: pw.TextAlign.center,
       ),
     );
   }

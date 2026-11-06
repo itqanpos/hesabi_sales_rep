@@ -277,17 +277,19 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
                 separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE0E0E0)),
                 itemBuilder: (_, i) {
                   final d = widget.printers[i];
+                  final name = d.name;
+                  final address = d.address;
                   return ListTile(
                     leading: const Icon(Icons.print_outlined, color: Color(0xFF00897B)),
                     title: Text(
-                      d.name ?? 'طابعة',
+                      name,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    subtitle: Text(d.address ?? ''),
+                    subtitle: Text(address),
                     onTap: () async {
                       await BluetoothPrinterService.savePrinter(
-                        address: d.address ?? '',
-                        name: d.name ?? '',
+                        address: address,
+                        name: name,
                       );
                       if (!context.mounted) return;
                       Navigator.pop(context, d);

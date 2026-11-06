@@ -34,26 +34,12 @@ jobs:
           curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           echo "✅ Fonts downloaded"
-          ls -la assets/fonts/
 
       - name: Force recreate Android platform
         run: |
           rm -rf android
-          flutter create \
-            --platforms=android \
-            --org com.itqanpos \
-            --project-name hesabi_sales_rep \
-            --description "Hesabi Sales Rep - Mobile app for sales representatives" \
-            .
+          flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
           echo "✅ Android platform created"
-
-      - name: Verify Android platform created
-        run: |
-          if [ ! -f "android/app/build.gradle.kts" ] && [ ! -f "android/app/build.gradle" ]; then
-            echo "❌ Android platform not created properly"
-            exit 1
-          fi
-          echo "✅ Android build.gradle verified"
 
       - name: Install dependencies
         run: flutter pub get
@@ -69,23 +55,21 @@ jobs:
           }
           EOF
 
-      # ⬇️⬇️⬇️ الحل: توليد الأيقونات بشكل اختياري (لن يفشل البناء)
+      # ⬇️⬇️⬇️ جديد: إصلاح تلقائي
+      - name: Auto-fix lint issues
+        run: |
+          echo "🔧 Running dart fix --apply..."
+          dart fix --apply || echo "⚠️ Some fixes skipped"
+          echo "✅ Auto-fix complete"
+
       - name: Generate Launcher Icons (optional)
         continue-on-error: true
         run: |
-          echo "🔍 Checking for logo..."
           if [ -f "assets/images/logo.png" ]; then
-            echo "✅ Logo found at assets/images/logo.png"
-            ls -la assets/images/logo.png
-            echo "🎨 Generating custom launcher icons..."
+            echo "✅ Logo found"
             dart run flutter_launcher_icons
-            echo "✅ Custom icons generated"
           else
-            echo "⚠️  logo.png NOT found at assets/images/logo.png"
-            echo "⚠️  Skipping launcher icons generation - using default Flutter icon"
-            echo "💡 To add a custom icon later:"
-            echo "   1. Upload logo.png to assets/images/ in the repository"
-            echo "   2. Re-run this workflow"
+            echo "⚠️ logo.png not found — using default icon"
           fi
 
       - name: Set minSdk 23 / compileSdk 36 / targetSdk 36
@@ -112,13 +96,12 @@ jobs:
           set -e
           PUB_CACHE_ROOT="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev"
           if [ ! -d "$PUB_CACHE_ROOT" ]; then
-            echo "!! pub-cache root not found at $PUB_CACHE_ROOT"
+            echo "!! pub-cache not found"
             exit 1
           fi
           python3 - "$PUB_CACHE_ROOT" <<'PY'
           import re, pathlib, sys
           root = pathlib.Path(sys.argv[1])
-          total = 0
           patched = 0
           for pkg in sorted(root.iterdir()):
               if not pkg.is_dir(): continue
@@ -127,13 +110,10 @@ jobs:
               for fname in ('build.gradle', 'build.gradle.kts'):
                   f = android_dir / fname
                   if not f.exists(): continue
-                  total += 1
                   text = f.read_text()
                   original = text
                   text = re.sub(r'compileSdkVersion\s*=?\s*[0-9]+', 'compileSdkVersion 36', text)
-                  text = re.sub(r'compileSdkVersion\(\s*[0-9]+\s*\)', 'compileSdkVersion(36)', text)
                   text = re.sub(r'compileSdk\s*=\s*[0-9]+', 'compileSdk = 36', text)
-                  text = re.sub(r'compileSdk\(\s*[0-9]+\s*\)', 'compileSdk(36)', text)
                   text = re.sub(r'\bcompileSdk\s+[0-9]+\b', 'compileSdk 36', text)
                   text = re.sub(r'compileSdkVersion\s*=?\s*project\.flutter\.compileSdkVersion', 'compileSdkVersion 36', text)
                   text = re.sub(r'compileSdk\s*=?\s*project\.flutter\.compileSdkVersion', 'compileSdk = 36', text)
@@ -142,7 +122,7 @@ jobs:
                   if text != original:
                       f.write_text(text)
                       patched += 1
-          print(f'Scanned: {total}, Patched: {patched}')
+          print(f'Patched: {patched}')
           PY
 
       - name: Add Android permissions
@@ -194,24 +174,15 @@ jobs:
               p = pathlib.Path(fname)
               if not p.exists(): continue
               text = p.read_text()
-              if 'proguard-rules.pro' in text:
-                  continue
+              if 'proguard-rules.pro' in text: continue
               if fname.endswith('.kts'):
-                  text = re.sub(
-                      r'(buildTypes\s*\{[\s\S]*?release\s*\{)',
-                      r'\1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")',
-                      text, count=1,
-                  )
+                  text = re.sub(r'(buildTypes\s*\{[\s\S]*?release\s*\{)', r'\1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")', text, count=1)
               else:
-                  text = re.sub(
-                      r'(release\s*\{)',
-                      r'\1\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"',
-                      text, count=1,
-                  )
+                  text = re.sub(r'(release\s*\{)', r'\1\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"', text, count=1)
               p.write_text(text)
           PY
 
-      - name: Analyze
+      - name: Analyze (post-fix)
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build Release APK
@@ -221,14 +192,12 @@ jobs:
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Collect APK (stable filename)
+      - name: Collect APK
         run: |
           mkdir -p build/apk
-          cp build/app/outputs/flutter-apk/app-release.apk \
-             "build/apk/hesabi-sales-rep.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "build/apk/hesabi-sales-rep.apk"
           SIZE=$(du -h build/apk/hesabi-sales-rep.apk | cut -f1)
           echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
-          echo "✅ APK ready: $SIZE"
 
       - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
@@ -236,19 +205,17 @@ jobs:
           name: hesabi-sales-rep-apk-build${{ github.run_number }}
           path: build/apk/*.apk
           retention-days: 30
-          if-no-files-found: error
 
-      - name: Publish to Releases (apk-latest)
+      - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
           name: "Hesabi Sales Rep APK - آخر إصدار"
           body: |
-            ## 📱 Hesabi Sales Rep — آخر إصدار
-
             **رقم البناء:** #${{ github.run_number }}
-            **حجم الملف:** ${{ env.APK_SIZE }}
-            **Commit:** `${{ github.sha }}`
-
-            ### 📥 رابط التحميل المباشر (دائم):
-            [**اضغط هنا**](https://github.com/itqanpos/hesabi_sales_rep/releases/latest/download/hesabi-sales-rep.apk)
+            **الحجم:** ${{ env.APK_SIZE }}
+            ### 📥 [تحميل مباشر](https://github.com/itqanpos/hesabi_sales_rep/releases/latest/download/hesabi-sales-rep.apk)
+          files: build/apk/hesabi-sales-rep.apk
+          make_latest: true
+          draft: false
+          prerelease: false

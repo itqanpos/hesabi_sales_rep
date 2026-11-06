@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../domain/sales_models.dart';
 import '../../data/sales_history_repository.dart';
-import '../widgets/invoice_printer.dart';   // ⬅️ جديد — للطباعة والمشاركة
+import '../widgets/invoice_printer.dart'; // للطباعة والمشاركة
 
 class _C {
   static const primary       = Color(0xFF00897B);
@@ -298,7 +298,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 }
 
 // ============================================================
-// Sale Card
+// Sale Card (القائمة)
 // ============================================================
 class _SaleCard extends StatelessWidget {
   final SaleSummary sale;
@@ -411,7 +411,7 @@ class _SaleCard extends StatelessWidget {
 }
 
 // ============================================================
-// Sale Detail Page
+// Sale Detail Page (تفاصيل الفاتورة)
 // ============================================================
 class _SaleDetailPage extends StatefulWidget {
   final String saleId;
@@ -548,7 +548,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // رأس الفاتورة
+        // ⬇️⬇️⬇️ رأس الفاتورة (تم إضافة زر المرتجع هنا)
         _Card(child: Column(children: [
           Row(children: [
             Container(
@@ -570,6 +570,20 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
                     style: const TextStyle(fontSize: 11.5, color: _C.textSecondary)),
               ],
             )),
+            // ⬇️ زر المرتجع الجديد
+            OutlinedButton.icon(
+              onPressed: () => _snack('قريباً: المرتجع المرتبط'),
+              icon: const Icon(Icons.assignment_return_outlined, size: 16),
+              label: const Text('مرتجع', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _C.danger,
+                side: const BorderSide(color: _C.danger),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
           ]),
           const SizedBox(height: 12),
           const Divider(height: 1, color: _C.border),
@@ -583,7 +597,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 12),
 
-        // ⬇️⬇️⬇️ جدول المنتجات (محسّن ليطابق الفاتورة المطبوعة)
+        // جدول المنتجات
         _Card(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -660,7 +674,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 20),
 
-        // ⬇️⬇️⬇️ الأزرار: مشاركة + طباعة
+        // الأزرار السفلية (مشاركة + طباعة)
         Row(children: [
           Expanded(child: OutlinedButton.icon(
             onPressed: () => _share(sale),
@@ -686,29 +700,13 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
           )),
         ]),
 
-        const SizedBox(height: 10),
-
-        // زر المرتجع (placeholder)
-        OutlinedButton.icon(
-          onPressed: () => _snack('قريباً: المرتجع المرتبط'),
-          icon: const Icon(Icons.assignment_return_outlined, size: 20),
-          label: const Text('تسجيل مرتجع مرتبط بهذه الفاتورة',
-              style: TextStyle(fontWeight: FontWeight.w700)),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 48),
-            side: const BorderSide(color: _C.border),
-            foregroundColor: _C.textSecondary,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          ),
-        ),
-
         const SizedBox(height: 24),
       ],
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   جدول المنتجات — مطابق للفاتورة المطبوعة
+  //   جدول المنتجات
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildProductsTable(SaleDetail sale) {
     final totalQty = sale.items.fold<double>(0, (s, i) => s + i.quantity);
@@ -732,7 +730,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
           4: FixedColumnWidth(72),    // الإجمالي
         },
         children: [
-          // ── Header ──────────────────────────────────────────────────────
+          // ── Header ──
           TableRow(
             decoration: BoxDecoration(color: _C.surfaceGray),
             children: [
@@ -743,7 +741,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
               _tableCell('الإجمالي', bold: true, center: true, small: true),
             ],
           ),
-          // ── Data rows ───────────────────────────────────────────────────
+          // ── Data rows ──
           for (int i = 0; i < sale.items.length; i++)
             TableRow(
               children: [
@@ -772,7 +770,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
                 ),
               ],
             ),
-          // ── Summary row ─────────────────────────────────────────────────
+          // ── Summary row ──
           TableRow(
             decoration: BoxDecoration(color: _C.surfaceGray),
             children: [

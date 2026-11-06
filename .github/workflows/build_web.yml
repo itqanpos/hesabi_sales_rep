@@ -5,7 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# ⬇️⬇️ جديد: منع قفل النشر المتزامن
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -27,8 +26,14 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Flutter version
-        run: flutter --version
+      # ⬇️⬇️ تحميل خطوط Cairo (جديد)
+      - name: Download Cairo fonts
+        run: |
+          mkdir -p assets/fonts
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
+          curl -fL -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+          echo "✅ Fonts downloaded:"
+          ls -la assets/fonts/
 
       - name: Install dependencies
         run: flutter pub get

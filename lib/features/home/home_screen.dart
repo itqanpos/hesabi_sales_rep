@@ -133,7 +133,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _repBranchId = reps.first['branch_id'] as String?;
         _repType = reps.first['rep_type'] as String?;
 
-        // نعرض الصفحة فوراً (KPIs لسه 0) ثم نحمّلها في الخلفية
         if (mounted) setState(() => _loading = false);
         _loadKpis();
       } else {
@@ -160,7 +159,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// ⚡ استدعاء واحد فقط بدل 7 استعلامات
   Future<void> _loadKpis() async {
     if (_repId == null || _selectedCompanyId == null) return;
 
@@ -186,7 +184,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _customersCount   = _i(data['customers_count']);
       _monthlyTarget    = _n(data['monthly_target']);
 
-      // دمج البيع والتحصيل في قائمة نشاطات مرتبة
       final sales = (data['recent_sales'] as List?) ?? const [];
       final payments = (data['recent_payments'] as List?) ?? const [];
       final merged = <Map<String, dynamic>>[];
@@ -221,7 +218,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() => _kpisLoading = false);
       }
-    } catch (_) {
+    } catch (e) {
+      // ⬇️ إضافة طباعة الخطأ لمساعدة المطور في التشخيص
+      print('DEBUG: Error loading dashboard: $e');
       if (mounted) setState(() => _kpisLoading = false);
     }
   }
@@ -344,7 +343,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ⬇️⬇️ جديد: دالة فتح الأهداف والعمولات
   void _openTargets() {
     if (_repId == null) {
       _showMessage('حسابك غير مربوط كمندوب.');
@@ -354,6 +352,10 @@ class _HomeScreenState extends State<HomeScreen> {
       'companyId': _selectedCompanyId,
       'salesRepId': _repId,
     });
+  }
+
+  void _openSettings() {
+    context.push('/settings');
   }
 
   void _openMoreSheet() {
@@ -379,7 +381,9 @@ class _HomeScreenState extends State<HomeScreen> {
             case 'reports':
               _openReports();
             case 'targets':
-              _openTargets(); // ⬅️ جديد
+              _openTargets();
+            case 'settings': // ⬅️ جديد
+              _openSettings();
             case 'admin_reps':
               context.push('/admin/reps', extra: _selectedCompanyId);
             case 'logout':
@@ -952,12 +956,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── بطاقة الهدف (قابلة للضغط — تفتح صفحة الأهداف) ───
+  // ─── بطاقة الهدف ───
   Widget _buildTargetCard() {
     final percent =
         (_monthlySales / _monthlyTarget * 100).clamp(0, 100);
     return InkWell(
-      onTap: _openTargets,                       // ⬅️ جديد: قابل للضغط
+      onTap: _openTargets,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -1195,8 +1199,8 @@ class _MoreSheet extends StatelessWidget {
           _MoreItem('custody', 'العهدة', Icons.inventory_2, _C.primary),
         _MoreItem('visits', 'الزيارات', Icons.location_on, _C.purple),
         _MoreItem('reports', 'التقارير', Icons.bar_chart, _C.blue),
-        // ⬇️⬇️ جديد: الأهداف والعمولات
         _MoreItem('targets', 'الأهداف والعمولات', Icons.flag, _C.success),
+        _MoreItem('settings', 'الإعدادات', Icons.settings, _C.textSecondary), // ⬅️ جديد
       ]);
     }
 

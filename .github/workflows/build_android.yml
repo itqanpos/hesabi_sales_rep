@@ -34,29 +34,34 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
-
       - name: Create Android platform (if missing)
         run: |
           if [ ! -d "android" ]; then
-            echo "📱 Creating Android platform files..."
+            echo "📱 Creating Android platform..."
             flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
-            echo "✅ Created"
-          else
-            echo "✅ Android platform already exists"
           fi
 
-      - name: Ensure AndroidManifest has required permissions
+      - name: Ensure AndroidManifest has permissions
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "BLUETOOTH_CONNECT" "$MANIFEST"; then
             echo "🔧 Adding permissions..."
             sed -i 's#</manifest>#    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n</manifest>#' "$MANIFEST"
-            echo "✅ Permissions added"
-          else
-            echo "✅ Permissions already present"
           fi
+
+      # ⬇️⬇️ تحميل خطوط Cairo تلقائياً
+      - name: Download Cairo fonts
+        run: |
+          mkdir -p assets/fonts
+          curl -L -o assets/fonts/Cairo-Regular.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          # نسختين: Regular و Bold من نفس ملف المتغير
+          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
+          echo "✅ Fonts downloaded"
+          ls -la assets/fonts/
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
@@ -72,7 +77,6 @@ jobs:
           APK=build/app/outputs/flutter-apk/app-release.apk
           if [ -f "$APK" ]; then
             SIZE=$(du -h "$APK" | cut -f1)
-            echo "APK Size: $SIZE"
             echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
           fi
 
@@ -83,7 +87,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
-      - name: Build summary
+      - name: Summary
         run: |
           {
             echo "## ✅ تم بناء APK بنجاح"
@@ -92,11 +96,9 @@ jobs:
             echo "|---|---|"
             echo "| **الإصدار** | v${{ github.run_number }} |"
             echo "| **حجم APK** | ${{ env.APK_SIZE }} |"
-            echo "| **النوع** | Release (Debug Signed) |"
             echo ""
-            echo "### 📥 كيفية التحميل:"
-            echo "1. انزل لأسفل إلى قسم **Artifacts**"
+            echo "### 📥 التحميل:"
+            echo "1. انزل لأسفل → **Artifacts**"
             echo "2. اضغط على **hesabi-sales-rep-apk-v${{ github.run_number }}**"
-            echo "3. حمّل الـ zip وفك الضغط"
-            echo "4. ثبّت **app-release.apk** على جهاز الأندرويد"
+            echo "3. فك ضغط zip → ثبّت **app-release.apk**"
           } >> $GITHUB_STEP_SUMMARY

@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write       # ضروري لإنشاء Releases
+  contents: write
 
 concurrency:
   group: flutter-apk-${{ github.ref }}
@@ -68,6 +68,10 @@ jobs:
             test('sanity check', () => expect(2 + 2, 4));
           }
           EOF
+
+      # ⬇️⬇️ توليد أيقونات التطبيق
+      - name: Generate Launcher Icons
+        run: dart run flutter_launcher_icons
 
       - name: Set minSdk 23 / compileSdk 36 / targetSdk 36
         run: |
@@ -202,7 +206,6 @@ jobs:
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      # ⬇️⬇️⬇️ اسم ثابت للـ APK (رابط تحميل مباشر دائم)
       - name: Collect APK (stable filename)
         run: |
           mkdir -p build/apk
@@ -212,7 +215,6 @@ jobs:
           echo "APK_SIZE=$SIZE" >> $GITHUB_ENV
           echo "✅ APK ready: $SIZE"
 
-      # ⬇️ Artifact للاحتفاظ المؤقت (30 يوم)
       - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -221,7 +223,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # ⬇️⬇️⬇️ Release مع tag ثابت `apk-latest`
       - name: Publish to Releases (apk-latest)
         uses: softprops/action-gh-release@v2
         with:

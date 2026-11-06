@@ -12,6 +12,7 @@ class PdfInvoiceBuilder {
     required String branchName,
     required String companyPhone,
   }) async {
+    // ⬇️⬇️ Cairo (نفس ما كان شغال)
     final fontRegular = pw.Font.ttf(
         await rootBundle.load('assets/fonts/Cairo-Regular.ttf'));
     final fontBold =
@@ -100,8 +101,10 @@ class PdfInvoiceBuilder {
   }
 
   static pw.Widget _buildMetaBlock(SaleDetail sale) {
-    final dateFormat = DateFormat('EEEE، yyyy/MM/dd — hh:mm a', 'ar');
-    final formattedDate = dateFormat.format(sale.saleDate);
+    // ⬇️⬇️ اسم اليوم بالعربي + الأرقام بالإنجليزي (0-9)
+    final dayName = DateFormat('EEEE', 'ar').format(sale.saleDate);
+    final dateStr = DateFormat('yyyy/MM/dd — hh:mm a', 'en').format(sale.saleDate);
+    final formattedDate = '$dayName، $dateStr';
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -114,7 +117,6 @@ class PdfInvoiceBuilder {
     );
   }
 
-  /// ⬇️ يقبل `String?` ويعالج الـ null داخلياً
   static pw.Widget _metaRow(String label, String? value,
       {bool emphasized = false}) {
     return pw.Padding(
@@ -286,7 +288,8 @@ class PdfInvoiceBuilder {
   static pw.Widget _buildFooter() {
     return pw.Center(
       child: pw.Text(
-        'شكراً لتعاملكم معنا',
+        // ⬇️⬇️ بدون تنوين (شكرا بدل شكراً)
+        'شكرا لتعاملكم معنا',
         style: pw.TextStyle(
             fontSize: 10,
             fontStyle: pw.FontStyle.italic,

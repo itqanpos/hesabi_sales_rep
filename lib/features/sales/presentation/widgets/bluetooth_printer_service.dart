@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_pos_printer_platform_image_3/flutter_pos_printer_platform_image_3.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,15 +8,21 @@ class BluetoothPrinterService {
   static const _prefKeyName = 'printer_name';
 
   /// بحث عن طابعات البلوتوث المقترنة
+  /// discovery() بيرجع Stream — بنجمعه في List مع timeout
   static Future<List<PrinterDevice>> discoverPrinters() async {
+    final printers = <PrinterDevice>[];
     try {
-      final printers = await PrinterManager.instance.discovery(
+      final stream = PrinterManager.instance.discovery(
         type: PrinterType.bluetooth,
       );
-      return printers;
-    } catch (_) {
-      return [];
-    }
+      await for (final device in stream.timeout(
+        const Duration(seconds: 6),
+        onTimeout: (sink) => sink.close(),
+      )) {
+        printers.add(device);
+      }
+    } catch (_) {}
+    return printers;
   }
 
   /// عنوان الطابعة المحفوظة
@@ -39,7 +47,7 @@ class BluetoothPrinterService {
     await prefs.setString(_prefKeyName, name);
   }
 
-  /// مسح الطابعة
+  /// مسح الطابعة المحفوظة
   static Future<void> clearSavedPrinter() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefKeyAddress);
@@ -50,10 +58,8 @@ class BluetoothPrinterService {
   static Future<bool> connect(PrinterDevice device) async {
     try {
       final connected = await PrinterManager.instance.connect(
-        model: PrinterAdapter(
-          model: device,
-          port: '9100',
-        ),
+        type: PrinterType.bluetooth,
+        model: device,
       );
       return connected ?? false;
     } catch (_) {
@@ -65,7 +71,7 @@ class BluetoothPrinterService {
   static Future<bool> writeBytes(List<int> bytes) async {
     try {
       await PrinterManager.instance.send(
-        type: PrinterType.bytes,
+        type: PrinterType.bluetooth,
         bytes: bytes,
       );
       return true;
@@ -77,7 +83,7 @@ class BluetoothPrinterService {
   /// قطع الاتصال
   static Future<void> disconnect() async {
     try {
-      await PrinterManager.instance.disconnect();
+      await PrinterManager.instance.disconnect(type: PrinterType.bluetooth);
     } catch (_) {}
   }
 }

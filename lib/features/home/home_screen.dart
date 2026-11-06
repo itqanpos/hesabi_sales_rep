@@ -55,11 +55,10 @@ class _HomeScreenState extends State<HomeScreen> {
   int _customersCount = 0;
   double _monthlyTarget = 0;
   double _monthlySales = 0;
-
-  // ─── Recent activity ───
   List<Map<String, dynamic>> _recentActivity = [];
 
   bool _loading = true;
+  bool _kpisLoading = false;
   String? _error;
 
   @override
@@ -133,7 +132,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _repId = reps.first['id'] as String;
         _repBranchId = reps.first['branch_id'] as String?;
         _repType = reps.first['rep_type'] as String?;
-        await _loadKpis(user.id);
+
+        // نعرض الصفحة فوراً (KPIs لسه 0) ثم نحمّلها في الخلفية
+        if (mounted) setState(() => _loading = false);
+        _loadKpis();
       } else {
         _isRep = false;
         _repId = null;
@@ -146,9 +148,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _monthlyTarget = 0;
         _monthlySales = 0;
         _recentActivity = [];
+        if (mounted) setState(() => _loading = false);
       }
-
-      if (mounted) setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -159,143 +160,69 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadKpis(String userId) async {
-    final client = Supabase.instance.client;
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day).toUtc();
-    final monthStart = DateTime(now.year, now.month, 1).toUtc();
+  /// ⚡ استدعاء واحد فقط بدل 7 استعلامات
+  Future<void> _loadKpis() async {
+    if (_repId == null || _selectedCompanyId == null) return;
 
+    setState(() => _kpisLoading = true);
     try {
-      final todaySalesRes = await client
-          .from('sales')
-          .select('id, total')
-          .eq('company_id', _selectedCompanyId!)
-          .eq('sales_rep_id', _repId!)
-          .neq('status', 'cancelled')
-          .gte('sale_date', todayStart.toIso8601String());
-      final list = (todaySalesRes as List).cast<Map<String, dynamic>>();
-      _todayInvoices = list.length;
-      _todaySales = list.fold<double>(
-          0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
-    } catch (_) {
-      _todaySales = 0;
-      _todayInvoices = 0;
-    }
+      final res = await Supabase.instance.client.rpc(
+        'get_rep_dashboard',
+        params: {
+          'p_company_id': _selectedCompanyId,
+          'p_sales_rep_id': _repId,
+        },
+      );
 
-    try {
-      final monthSalesRes = await client
-          .from('sales')
-          .select('total')
-          .eq('company_id', _selectedCompanyId!)
-          .eq('sales_rep_id', _repId!)
-          .neq('status', 'cancelled')
-          .gte('sale_date', monthStart.toIso8601String());
-      _monthlySales = (monthSalesRes as List).fold<double>(
-          0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0));
-    } catch (_) {
-      _monthlySales = 0;
-    }
+      final data = (res is Map) ? res as Map<String, dynamic> : {};
 
-    try {
-      final paymentsRes = await client
-          .from('customer_payments')
-          .select('amount')
-          .eq('company_id', _selectedCompanyId!)
-          .gte('created_at', todayStart.toIso8601String());
-      _todayCollections = (paymentsRes as List).fold<double>(
-          0, (s, e) => s + ((e['amount'] as num?)?.toDouble() ?? 0));
-    } catch (_) {
-      _todayCollections = 0;
-    }
+      double _n(dynamic v) => (v as num?)?.toDouble() ?? 0;
+      int _i(dynamic v) => ((v as num?)?.toInt()) ?? 0;
 
-    try {
-      final customersRes = await client
-          .from('customers')
-          .select('id')
-          .eq('company_id', _selectedCompanyId!)
-          .eq('is_active', true);
-      _customersCount = (customersRes as List).length;
-    } catch (_) {
-      _customersCount = 0;
-    }
+      _todaySales       = _n(data['today_sales']);
+      _todayInvoices    = _i(data['today_invoices']);
+      _todayCollections = _n(data['today_collections']);
+      _monthlySales     = _n(data['month_sales']);
+      _customersCount   = _i(data['customers_count']);
+      _monthlyTarget    = _n(data['monthly_target']);
 
-    try {
-      final repLink = await client
-          .from('sales_reps')
-          .select('rep_id')
-          .eq('id', _repId!)
-          .maybeSingle();
-      final legacyRepId = repLink?['rep_id'];
-      if (legacyRepId != null) {
-        final targetRes = await client
-            .from('reps')
-            .select('target')
-            .eq('id', legacyRepId)
-            .maybeSingle();
-        _monthlyTarget =
-            (targetRes?['target'] as num?)?.toDouble() ?? 0;
-      }
-    } catch (_) {
-      _monthlyTarget = 0;
-    }
-
-    await _loadRecentActivity();
-  }
-
-  Future<void> _loadRecentActivity() async {
-    if (_repId == null || _selectedCompanyId == null) {
-      _recentActivity = [];
-      return;
-    }
-    try {
-      final client = Supabase.instance.client;
-
-      final salesRes = await client
-          .from('sales')
-          .select('invoice_number, total, sale_date, status')
-          .eq('company_id', _selectedCompanyId!)
-          .eq('sales_rep_id', _repId!)
-          .neq('status', 'cancelled')
-          .order('sale_date', ascending: false)
-          .limit(3);
-
-      final paymentsRes = await client
-          .from('customer_payments')
-          .select('amount, method, created_at')
-          .eq('company_id', _selectedCompanyId!)
-          .eq('sales_rep_id', _repId!)
-          .order('created_at', ascending: false)
-          .limit(3);
-
-      final list = <Map<String, dynamic>>[];
-      for (final s in (salesRes as List)) {
-        final m = s as Map<String, dynamic>;
-        list.add({
+      // دمج البيع والتحصيل في قائمة نشاطات مرتبة
+      final sales = (data['recent_sales'] as List?) ?? const [];
+      final payments = (data['recent_payments'] as List?) ?? const [];
+      final merged = <Map<String, dynamic>>[];
+      for (final s in sales) {
+        final m = (s as Map).cast<String, dynamic>();
+        merged.add({
           'type': 'sale',
-          'title': 'فاتورة #${m['invoice_number'] ?? ''}',
-          'amount': (m['total'] as num?)?.toDouble() ?? 0,
-          'date': m['sale_date'],
+          'title': 'فاتورة #${m['title'] ?? ''}',
+          'amount': _n(m['amount']),
+          'date': m['date'],
         });
       }
-      for (final p in (paymentsRes as List)) {
-        final m = p as Map<String, dynamic>;
-        list.add({
+      for (final p in payments) {
+        final m = (p as Map).cast<String, dynamic>();
+        merged.add({
           'type': 'payment',
           'title': 'تحصيل من عميل',
-          'amount': (m['amount'] as num?)?.toDouble() ?? 0,
-          'date': m['created_at'],
+          'amount': _n(m['amount']),
+          'date': m['date'],
         });
       }
-      list.sort((a, b) {
-        final da = DateTime.tryParse(a['date']?.toString() ?? '') ??
-            DateTime(2000);
-        final db = DateTime.tryParse(b['date']?.toString() ?? '') ??
-            DateTime(2000);
+      merged.sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '');
+        final db = DateTime.tryParse(b['date']?.toString() ?? '');
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
         return db.compareTo(da);
       });
-      _recentActivity = list.take(4).toList();
+      _recentActivity = merged.take(4).toList();
+
+      if (mounted) {
+        setState(() => _kpisLoading = false);
+      }
     } catch (_) {
-      _recentActivity = [];
+      if (mounted) setState(() => _kpisLoading = false);
     }
   }
 
@@ -313,7 +240,9 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadCompanyContext();
   }
 
-  Future<void> _refresh() async => await _loadCompanyContext();
+  Future<void> _refresh() async {
+    await _loadKpis();
+  }
 
   Future<void> _logout() async {
     await Supabase.instance.client.auth.signOut();
@@ -382,6 +311,18 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  // ⬇️⬇️ جديد: دالة فتح المرتجعات
+  void _openReturns() {
+    if (_repId == null) {
+      _showMessage('حسابك غير مربوط كمندوب.');
+      return;
+    }
+    context.push('/returns', extra: {
+      'companyId': _selectedCompanyId,
+      'salesRepId': _repId,
+    });
+  }
+
   void _openMoreSheet() {
     showModalBottomSheet(
       context: context,
@@ -397,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
             case 'invoices':
               _openSalesHistory();
             case 'returns':
-              _showMessage('شاشة المرتجعات - قريباً');
+              _openReturns(); // ⬅️ تعديل هنا
             case 'custody':
               _showMessage('شاشة العهدة - قريباً');
             case 'visits':
@@ -497,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════
-  //    Quick Actions (جديد)
+  //    Quick Actions
   // ═════════════════════════════════════════════════════════════
   Widget _buildQuickActions() {
     return Column(
@@ -553,9 +494,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════
-  //    Recent Activity (جديد)
+  //    Recent Activity
   // ═════════════════════════════════════════════════════════════
   Widget _buildRecentActivity() {
+    if (_kpisLoading && _recentActivity.isEmpty) {
+      return _buildSkeletonBox(height: 180);
+    }
     if (_recentActivity.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
@@ -569,19 +513,15 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(Icons.inbox_outlined,
                 size: 40, color: _C.textSecondary.withOpacity(0.5)),
             const SizedBox(height: 10),
-            const Text(
-              'لا توجد نشاطات بعد',
-              style: TextStyle(
-                  color: _C.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600),
-            ),
+            const Text('لا توجد نشاطات بعد',
+                style: TextStyle(
+                    color: _C.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            const Text(
-              'ابدأ بيعاً أو تحصيلاً جديداً',
-              style: TextStyle(
-                  color: _C.textSecondary, fontSize: 11),
-            ),
+            const Text('ابدأ بيعاً أو تحصيلاً جديداً',
+                style: TextStyle(
+                    color: _C.textSecondary, fontSize: 11)),
           ],
         ),
       );
@@ -640,11 +580,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  timeStr,
-                  style: const TextStyle(
-                      fontSize: 11, color: _C.textSecondary),
-                ),
+                Text(timeStr,
+                    style: const TextStyle(
+                        fontSize: 11, color: _C.textSecondary)),
               ],
             ),
           ),
@@ -662,7 +600,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════
-  //    Bottom Navigation Bar (محدّث)
+  //    Bottom Navigation Bar
   // ═════════════════════════════════════════════════════════════
   Widget _buildBottomNav() {
     return Container(
@@ -794,7 +732,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── مُبدّل الشركات ───
   Widget _buildCompanySwitcher() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -826,6 +763,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ─── KPIs ───
   Widget _buildKpiGrid() {
+    if (_kpisLoading) return _buildSkeletonGrid();
+
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -946,6 +885,38 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ─── Skeleton loaders ───
+  Widget _buildSkeletonBox({required double height}) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: _C.surfaceGray,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _C.border),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: _C.primary.withOpacity(0.5)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.35,
+      children: List.generate(4, (_) => _buildSkeletonBox(height: 100)),
+    );
+  }
+
   // ─── بطاقة الهدف ───
   Widget _buildTargetCard() {
     final percent =
@@ -1018,7 +989,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ─── حالة المزامنة ───
   Widget _buildSyncStatus() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1055,7 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ============================================================
-// Quick Action Card (جديد)
+// Quick Action Card
 // ============================================================
 class _QuickAction extends StatelessWidget {
   final IconData icon;
@@ -1075,8 +1045,7 @@ class _QuickAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(14),
@@ -1093,16 +1062,13 @@ class _QuickAction extends StatelessWidget {
               child: Icon(icon, color: color, size: 24),
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
@@ -1135,8 +1101,8 @@ class _NavItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: active ? _C.primaryLight : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
@@ -1144,14 +1110,12 @@ class _NavItem extends StatelessWidget {
               child: Icon(icon, color: color, size: 24),
             ),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: active ? FontWeight.bold : FontWeight.w600,
-                color: color,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight:
+                        active ? FontWeight.bold : FontWeight.w600,
+                    color: color)),
           ],
         ),
       ),
@@ -1160,7 +1124,7 @@ class _NavItem extends StatelessWidget {
 }
 
 // ============================================================
-// More Sheet (نافذة "المزيد") — محدّثة
+// More Sheet
 // ============================================================
 class _MoreSheet extends StatelessWidget {
   final bool isManager;
@@ -1186,8 +1150,7 @@ class _MoreSheet extends StatelessWidget {
         _MoreItem('returns', 'المرتجعات', Icons.assignment_return,
             _C.danger),
         if (repType == 'custody')
-          _MoreItem(
-              'custody', 'العهدة', Icons.inventory_2, _C.primary),
+          _MoreItem('custody', 'العهدة', Icons.inventory_2, _C.primary),
         _MoreItem('visits', 'الزيارات', Icons.location_on, _C.purple),
         _MoreItem('reports', 'التقارير', Icons.bar_chart, _C.blue),
       ]);
@@ -1209,8 +1172,7 @@ class _MoreSheet extends StatelessWidget {
       builder: (context, scroll) => Container(
         decoration: const BoxDecoration(
           color: _C.surface,
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(children: [
           const SizedBox(height: 10),

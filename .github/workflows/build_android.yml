@@ -34,23 +34,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # ⬇️⬇️ 1. تحميل خطوط Cairo (مطلوبة للـ PDF)
+      # ⬇️⬇️ تحميل خطوط Cairo (روابط محدثة تعمل 100%)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
-          curl -fL -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
+          cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
           echo "✅ Fonts downloaded:"
           ls -la assets/fonts/
 
-      # ⬇️⬇️ 2. حذف مجلد أندرويد القديم (إن وجد) وإنشاء جديد
+      # ⬇️⬇️ حذف مجلد أندرويد القديم وإنشاء جديد لضمان v2
       - name: Force recreate Android platform
         run: |
           rm -rf android
           flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
           echo "✅ Android platform created."
 
-      # ⬇️⬇️ 3. كتابة MainActivity.kt يدوياً (لضمان v2)
+      # ⬇️⬇️ كتابة MainActivity.kt يدوياً (لضمان v2)
       - name: Force write MainActivity.kt
         run: |
           mkdir -p android/app/src/main/kotlin/com/itqanpos/hesabi_sales_rep
@@ -63,7 +63,7 @@ jobs:
           EOF
           echo "✅ MainActivity.kt written."
 
-      # ⬇️⬇️ 4. كتابة AndroidManifest.xml يدوياً (أذونات + v2)
+      # ⬇️⬇️ كتابة AndroidManifest.xml يدوياً (أذونات + v2)
       - name: Force write AndroidManifest.xml
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<'EOF'
@@ -118,7 +118,7 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # ⬇️⬇️ 5. البناء
+      # ⬇️⬇️ البناء
       - name: Build Release APK
         run: |
           flutter build apk --release \

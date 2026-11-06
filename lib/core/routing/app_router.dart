@@ -12,7 +12,8 @@ import '../../features/pos/presentation/pages/pos_page.dart';
 import '../../features/reports/presentation/pages/reports_page.dart';
 import '../../features/returns/presentation/pages/returns_page.dart';
 import '../../features/sales/presentation/pages/sales_history_page.dart';
-import '../../features/visits/presentation/pages/visits_page.dart'; // ⬅️ جديد
+import '../../features/targets/presentation/pages/targets_page.dart'; // ⬅️ جديد
+import '../../features/visits/presentation/pages/visits_page.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/login',
@@ -123,7 +124,6 @@ final appRouter = GoRouter(
         );
       },
     ),
-    // ⬇️⬇️ جديد: الزيارات
     GoRoute(
       path: '/visits',
       builder: (context, state) {
@@ -132,6 +132,20 @@ final appRouter = GoRouter(
           return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
         }
         return VisitsPage(
+          companyId: data['companyId'] as String,
+          salesRepId: data['salesRepId'] as String,
+        );
+      },
+    ),
+    // ⬇️⬇️ جديد: الأهداف والعمولات
+    GoRoute(
+      path: '/targets',
+      builder: (context, state) {
+        final data = state.extra as Map<String, dynamic>?;
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text('خطأ في البيانات')));
+        }
+        return TargetsPage(
           companyId: data['companyId'] as String,
           salesRepId: data['salesRepId'] as String,
         );

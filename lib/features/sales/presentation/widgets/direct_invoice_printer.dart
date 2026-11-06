@@ -10,7 +10,6 @@ class DirectInvoicePrinter {
   static const _C_danger = Color(0xFFC62828);
   static const _C_success = Color(0xFF2E7D32);
 
-  /// الدالة الرئيسية للطباعة المباشرة
   static Future<void> print({
     required BuildContext context,
     required SaleDetail sale,
@@ -18,21 +17,19 @@ class DirectInvoicePrinter {
     required String branchName,
     required String companyPhone,
   }) async {
-    // 1. تحقق من وجود طابعة محفوظة
     final savedAddress = await BluetoothPrinterService.getSavedPrinterAddress();
 
-    // 2. إذا لم تكن هناك طابعة، اعرض قائمة الاختيار
     if (savedAddress == null) {
+      if (!context.mounted) return;
       final selected = await showModalBottomSheet<BluetoothDevice>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (_) => const _PrinterSelectSheet(),
       );
-      if (selected == null || selected.address == null) return;
+      if (selected == null) return;
     }
 
-    // 3. أعرض مؤشر تحميل
     if (!context.mounted) return;
     _showLoading(context);
 
@@ -40,13 +37,11 @@ class DirectInvoicePrinter {
       final address = await BluetoothPrinterService.getSavedPrinterAddress();
       if (address == null) throw 'لم يتم اختيار طابعة';
 
-      // 4. الاتصال بالطابعة
       final connected = await BluetoothPrinterService.connect(address);
       if (!connected) {
         throw 'تعذر الاتصال بالطابعة. تأكد من تشغيلها وتفعيل البلوتوث.';
       }
 
-      // 5. بناء أوامر ESC/POS
       final bytes = await _buildEscPosBytes(
         sale: sale,
         companyName: companyName,
@@ -54,15 +49,13 @@ class DirectInvoicePrinter {
         companyPhone: companyPhone,
       );
 
-      // 6. إرسال للطباعة
       final sent = await BluetoothPrinterService.writeBytes(bytes);
       if (!sent) throw 'فشل إرسال البيانات للطابعة';
 
-      // 7. قطع الاتصال (اختياري)
       await BluetoothPrinterService.disconnect();
 
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // أغلق مؤشر التحميل
+      Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ تم إرسال الفاتورة للطابعة'),
@@ -94,7 +87,7 @@ class DirectInvoicePrinter {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   بناء أوامر ESC/POS
+  //   بناء أوامر ESC/POS — bytes كـ List<int> غير final
   // ═══════════════════════════════════════════════════════════════════════════
 
   static Future<List<int>> _buildEscPosBytes({
@@ -105,17 +98,14 @@ class DirectInvoicePrinter {
   }) async {
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile);
-    final bytes = <int>[];
+    final List<int> bytes = <int>[];
 
-    // ⚠️ محاولة ضبط كود الصفحة العربية (cp864)
-    try {
-      bytes += generator.setGlobalCodeTable(CodePage.cp864);
-    } catch (_) {
-      // بعض الطابعات لا تدعم — تجاهل
-    }
+    // ضبط ترميز عربي (CP864 = 22) — raw bytes
+    // ESC t 22
+    bytes.addAll(<int>[0x1B, 0x74, 22]);
 
     // ─── 1. الرأس ──────────────────────────────────────────────────────────
-    bytes += generator.text(
+    bytes.addAll(generator.text(
       companyName,
       styles: const PosStyles(
         align: PosAlign.center,
@@ -124,29 +114,29 @@ class DirectInvoicePrinter {
         width: PosTextSize.size2,
         fontType: PosFontType.fontB,
       ),
-    );
-    bytes += generator.text(
+    ));
+    bytes.addAll(generator.text(
       branchName,
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size1,
         fontType: PosFontType.fontB,
       ),
-    );
+    ));
     if (companyPhone.isNotEmpty) {
-      bytes += generator.text(
+      bytes.addAll(generator.text(
         companyPhone,
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size1,
           fontType: PosFontType.fontB,
         ),
-      );
+      ));
     }
-    bytes += generator.feed(1);
+    bytes.addAll(generator.feed(1));
 
     // ─── 2. العنوان ────────────────────────────────────────────────────────
-    bytes += generator.text(
+    bytes.addAll(generator.text(
       'فاتورة مبيعات',
       styles: const PosStyles(
         align: PosAlign.center,
@@ -155,41 +145,40 @@ class DirectInvoicePrinter {
         width: PosTextSize.size2,
         fontType: PosFontType.fontB,
       ),
-    );
-    bytes += generator.feed(1);
-    bytes += generator.hr();
+    ));
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr());
 
     // ─── 3. بيانات الفاتورة ────────────────────────────────────────────────
-    bytes += generator.text(
-      'رقم الفاتورة: ${sale.invoiceNumber}',
+    bytes.addAll(generator.text(
+      'رقم الفاتورة: ${sale.invoiceNumber ?? '—'}',
       styles: const PosStyles(
         align: PosAlign.right,
         fontType: PosFontType.fontB,
       ),
-    );
+    ));
     final dateStr =
         '${sale.saleDate.year}/${sale.saleDate.month.toString().padLeft(2, '0')}/${sale.saleDate.day.toString().padLeft(2, '0')}';
-    bytes += generator.text(
+    bytes.addAll(generator.text(
       'التاريخ: $dateStr',
       styles: const PosStyles(
         align: PosAlign.right,
         fontType: PosFontType.fontB,
       ),
-    );
-    if (sale.customerName != null && sale.customerName!.isNotEmpty) {
-      bytes += generator.text(
+    ));
+    if (sale.customerName.isNotEmpty) {
+      bytes.addAll(generator.text(
         'العميل: ${sale.customerName}',
         styles: const PosStyles(
           align: PosAlign.right,
           fontType: PosFontType.fontB,
         ),
-      );
+      ));
     }
-    bytes += generator.hr();
+    bytes.addAll(generator.hr());
 
     // ─── 4. جدول المنتجات ─────────────────────────────────────────────────
-    // رأس الجدول
-    bytes += generator.row([
+    bytes.addAll(generator.row([
       PosColumn(
         text: 'الإجمالي',
         width: 3,
@@ -226,12 +215,11 @@ class DirectInvoicePrinter {
           fontType: PosFontType.fontB,
         ),
       ),
-    ]);
-    bytes += generator.hr(ch: '─', len: 48);
+    ]));
+    bytes.addAll(generator.hr(ch: '-', len: 48));
 
-    // بنود الفاتورة
     for (final line in sale.items) {
-      bytes += generator.row([
+      bytes.addAll(generator.row([
         PosColumn(
           text: line.lineTotal.toStringAsFixed(2),
           width: 3,
@@ -264,43 +252,43 @@ class DirectInvoicePrinter {
             fontType: PosFontType.fontB,
           ),
         ),
-      ]);
+      ]));
     }
-    bytes += generator.hr(ch: '─', len: 48);
+    bytes.addAll(generator.hr(ch: '-', len: 48));
 
     // ─── 5. الإجماليات ────────────────────────────────────────────────────
-    bytes += _totalRow(
+    bytes.addAll(_totalRow(
       generator,
       label: 'إجمالي الفاتورة',
       value: sale.total.toStringAsFixed(2),
-    );
-    bytes += _totalRow(
+    ));
+    bytes.addAll(_totalRow(
       generator,
       label: 'المدفوع',
       value: sale.paidAmount.toStringAsFixed(2),
-    );
+    ));
     final remaining = sale.total - sale.paidAmount;
     if (remaining.abs() > 0.001) {
-      bytes += _totalRow(
+      bytes.addAll(_totalRow(
         generator,
         label: 'المتبقي',
         value: remaining.toStringAsFixed(2),
         bold: true,
-      );
+      ));
     }
 
     // ─── 6. التذييل ────────────────────────────────────────────────────────
-    bytes += generator.feed(1);
-    bytes += generator.hr();
-    bytes += generator.text(
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr());
+    bytes.addAll(generator.text(
       'شكراً لتعاملكم معنا',
       styles: const PosStyles(
         align: PosAlign.center,
         fontType: PosFontType.fontB,
       ),
-    );
-    bytes += generator.feed(3);
-    bytes += generator.cut();
+    ));
+    bytes.addAll(generator.feed(3));
+    bytes.addAll(generator.cut());
 
     return bytes;
   }
@@ -372,13 +360,11 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
       setState(() {
         _devices = list;
         _loading = false;
-      });
-      if (list.isEmpty) {
-        setState(() {
+        if (list.isEmpty) {
           _error =
               'لا توجد طابعات مقترنة. اذهب لإعدادات البلوتوث واقترن بالطابعة أولاً.';
-        });
-      }
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -419,9 +405,7 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
                     child: Text(
                       'اختر الطابعة',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
+                          fontSize: 16, fontWeight: FontWeight.w800),
                     ),
                   ),
                   IconButton(
@@ -439,7 +423,8 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
             if (_loading)
               const Padding(
                 padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(color: Color(0xFF00897B)),
+                child:
+                    CircularProgressIndicator(color: Color(0xFF00897B)),
               )
             else if (_error != null)
               Padding(
@@ -464,8 +449,8 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                   itemCount: _devices.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, color: Color(0xFFE0E0E0)),
+                  separatorBuilder: (_, __) => const Divider(
+                      height: 1, color: Color(0xFFE0E0E0)),
                   itemBuilder: (_, i) {
                     final d = _devices[i];
                     return ListTile(
@@ -473,10 +458,12 @@ class _PrinterSelectSheetState extends State<_PrinterSelectSheet> {
                           color: Color(0xFF00897B)),
                       title: Text(
                         d.name ?? 'طابعة غير معروفة',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700),
                       ),
                       subtitle: Text(d.address ?? ''),
                       onTap: () async {
+                        if (d.address == null) return;
                         await BluetoothPrinterService.savePrinter(
                           address: d.address!,
                           name: d.name ?? '',

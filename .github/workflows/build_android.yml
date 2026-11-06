@@ -34,30 +34,83 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Create Android platform (if missing)
-        run: |
-          if [ ! -d "android" ]; then
-            echo "📱 Creating Android platform..."
-            flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
-          fi
-
-      - name: Fix v1 embedding issue in AndroidManifest
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          # استبدال أي إشارة لـ v1 بـ v2 (إذا وجدت)
-          sed -i 's#io.flutter.app.FlutterApplication#${applicationName}#g' "$MANIFEST"
-          sed -i 's#io.flutter.app.android.SplashScreenUntilFirstFrame#flutterEmbedding#g' "$MANIFEST"
-          echo "✅ Manifest fixed."
-
-      # ⬇️⬇️ تحميل خطوط Cairo من مستودع Google Fonts الرسمي ⬇️⬇️
+      # ⬇️⬇️ 1. تحميل خطوط Cairo (مطلوبة للـ PDF)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
-          # تحميل ملفات الخطوط (Regular & Bold) إلى مجلد assets/fonts
-          curl -L -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
-          curl -L -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
-          echo "✅ Fonts downloaded to assets/fonts/"
+          curl -fL -o assets/fonts/Cairo-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf"
+          curl -fL -o assets/fonts/Cairo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+          echo "✅ Fonts downloaded:"
           ls -la assets/fonts/
+
+      # ⬇️⬇️ 2. حذف مجلد أندرويد القديم (إن وجد) وإنشاء جديد
+      - name: Force recreate Android platform
+        run: |
+          rm -rf android
+          flutter create --platforms=android --org com.itqanpos --project-name hesabi_sales_rep .
+          echo "✅ Android platform created."
+
+      # ⬇️⬇️ 3. كتابة MainActivity.kt يدوياً (لضمان v2)
+      - name: Force write MainActivity.kt
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/itqanpos/hesabi_sales_rep
+          cat > android/app/src/main/kotlin/com/itqanpos/hesabi_sales_rep/MainActivity.kt <<'EOF'
+          package com.itqanpos.hesabi_sales_rep
+
+          import io.flutter.embedding.android.FlutterActivity
+
+          class MainActivity: FlutterActivity()
+          EOF
+          echo "✅ MainActivity.kt written."
+
+      # ⬇️⬇️ 4. كتابة AndroidManifest.xml يدوياً (أذونات + v2)
+      - name: Force write AndroidManifest.xml
+        run: |
+          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+              <application
+                  android:label="Hesabi Sales Rep"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                        android:name="io.flutter.embedding.android.NormalTheme"
+                        android:resource="@style/NormalTheme"
+                        />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.PROCESS_TEXT"/>
+                      <data android:mimeType="text/plain"/>
+                  </intent>
+              </queries>
+          </manifest>
+          EOF
+          echo "✅ AndroidManifest.xml written."
 
       - name: Install dependencies
         run: flutter pub get
@@ -65,6 +118,7 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      # ⬇️⬇️ 5. البناء
       - name: Build Release APK
         run: |
           flutter build apk --release \
@@ -95,9 +149,4 @@ jobs:
             echo "|---|---|"
             echo "| **الإصدار** | v${{ github.run_number }} |"
             echo "| **حجم APK** | ${{ env.APK_SIZE }} |"
-            echo ""
-            echo "### 📥 التحميل:"
-            echo "1. انزل لأسفل → **Artifacts**"
-            echo "2. اضغط على **hesabi-sales-rep-apk-v${{ github.run_number }}**"
-            echo "3. فك ضغط zip → ثبّت **app-release.apk**"
           } >> $GITHUB_STEP_SUMMARY

@@ -7,8 +7,7 @@ class BluetoothPrinterService {
   static const _prefKeyAddress = 'printer_address';
   static const _prefKeyName = 'printer_name';
 
-  /// بحث عن طابعات البلوتوث المقترنة
-  /// discovery() بيرجع Stream — بنجمعه في List مع timeout
+  /// بحث عن طابعات البلوتوث المقترنة (discovery بيرجع Stream — بنجمعه)
   static Future<List<PrinterDevice>> discoverPrinters() async {
     final printers = <PrinterDevice>[];
     try {
@@ -47,7 +46,7 @@ class BluetoothPrinterService {
     await prefs.setString(_prefKeyName, name);
   }
 
-  /// مسح الطابعة المحفوظة
+  /// مسح الطابعة
   static Future<void> clearSavedPrinter() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefKeyAddress);
@@ -55,13 +54,20 @@ class BluetoothPrinterService {
   }
 
   /// الاتصال بالطابعة
+  /// ⚠️ الإصدار 1.2.0 بيتطلب BluetoothPrinterInput مش PrinterDevice مباشرة
   static Future<bool> connect(PrinterDevice device) async {
     try {
+      final address = device.address;
+      if (address == null || address.isEmpty) return false;
+
       final connected = await PrinterManager.instance.connect(
         type: PrinterType.bluetooth,
-        model: device,
+        model: BluetoothPrinterInput(
+          name: device.name ?? 'Printer',
+          address: address,
+        ),
       );
-      return connected ?? false;
+      return connected;
     } catch (_) {
       return false;
     }

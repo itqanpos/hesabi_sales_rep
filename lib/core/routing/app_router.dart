@@ -12,7 +12,8 @@ import '../../features/pos/presentation/pages/pos_page.dart';
 import '../../features/reports/presentation/pages/reports_page.dart';
 import '../../features/returns/presentation/pages/returns_page.dart';
 import '../../features/sales/presentation/pages/sales_history_page.dart';
-import '../../features/targets/presentation/pages/targets_page.dart'; // ⬅️ جديد
+import '../../features/settings/presentation/pages/settings_page.dart'; // ⬅️ جديد
+import '../../features/targets/presentation/pages/targets_page.dart';
 import '../../features/visits/presentation/pages/visits_page.dart';
 
 final appRouter = GoRouter(
@@ -27,6 +28,10 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
     GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
+    GoRoute(
+      path: '/settings', // ⬅️ جديد
+      builder: (_, __) => const SettingsPage(),
+    ),
     GoRoute(
       path: '/admin/reps',
       builder: (context, state) => RepManagementScreen(
@@ -137,7 +142,6 @@ final appRouter = GoRouter(
         );
       },
     ),
-    // ⬇️⬇️ جديد: الأهداف والعمولات
     GoRoute(
       path: '/targets',
       builder: (context, state) {

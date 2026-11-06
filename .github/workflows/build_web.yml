@@ -26,7 +26,6 @@ jobs:
           channel: stable
           cache: false
 
-      # ⬇️⬇️ تحميل Cairo (المتغير — اللي كان شغال)
       - name: Download Cairo fonts
         run: |
           mkdir -p assets/fonts
@@ -48,6 +47,10 @@ jobs:
             test('sanity check', () => expect(2 + 2, 4));
           }
           EOF
+
+      # ⬇️⬇️ توليد أيقونات الويب
+      - name: Generate Launcher Icons
+        run: dart run flutter_launcher_icons
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings

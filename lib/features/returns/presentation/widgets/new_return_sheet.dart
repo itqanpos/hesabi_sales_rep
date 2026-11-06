@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -27,7 +29,6 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   // Shared
   ReturnCustomer? _customer;
   String _refund = 'credit_note';
-  String? _reason;
   final _notesCtrl = TextEditingController();
 
   // Linked flow
@@ -36,16 +37,20 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   ReturnableSale? _selectedSale;
   bool _loadingItems = false;
   List<ReturnableSaleItem> _saleItems = const [];
-  final Map<String, double> _returnQty = {}; // saleItemId → qty
+  final Map<String, double> _returnQty = {};
 
-  // Free flow
+  // Free flow — improved
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
+  bool _hasSearchText = false;
   bool _loadingProducts = false;
+  String _searchingQuery = '';
   List<FreeReturnProduct> _searchResults = const [];
   final List<FreeReturnCartLine> _cart = [];
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _notesCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -62,6 +67,8 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     }
     return _cart.fold(0.0, (s, l) => s + l.lineTotal);
   }
+
+  double get _cartTotal => _cart.fold(0.0, (s, l) => s + l.lineTotal);
 
   bool get _hasLines {
     if (_mode == _Mode.linked) {
@@ -81,6 +88,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       SnackBar(
         content: Text(msg),
         backgroundColor: isError ? _C.danger : _C.primary,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -97,8 +105,9 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       _returnQty.clear();
       _cart.clear();
       _searchResults = const [];
+      _searchingQuery = '';
+      _hasSearchText = false;
       _searchCtrl.clear();
-      _reason = null;
       _refund = 'credit_note';
       _notesCtrl.clear();
     });
@@ -122,7 +131,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     if (picked == null && _mode == _Mode.free) {
       setState(() {
         _customer = null;
-        _refund = 'cash'; // credit_note requires customer
+        _refund = 'cash';
       });
     } else if (picked != null) {
       setState(() => _customer = picked);
@@ -177,15 +186,42 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     }
   }
 
-  Future<void> _searchProducts() async {
-    setState(() => _loadingProducts = true);
+  // ── Free flow: search (debounced) ──────────────────────────────────────
+
+  void _onSearchChanged(String v) {
+    _searchDebounce?.cancel();
+    final hasText = v.trim().isNotEmpty;
+    if (hasText != _hasSearchText) {
+      setState(() => _hasSearchText = hasText);
+    }
+    if (!hasText) {
+      setState(() {
+        _searchResults = const [];
+        _searchingQuery = '';
+      });
+      return;
+    }
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _searchProducts(query: v),
+    );
+  }
+
+  Future<void> _searchProducts({required String query}) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+
+    setState(() {
+      _loadingProducts = true;
+      _searchingQuery = q;
+    });
     try {
       final list = await widget.repo.searchFreeReturnProducts(
         companyId: widget.companyId,
-        query: _searchCtrl.text,
-        limit: 30,
+        query: q,
+        limit: 40,
       );
-      if (!mounted) return;
+      if (!mounted || _searchingQuery != q) return;
       setState(() {
         _searchResults = list;
         _loadingProducts = false;
@@ -197,7 +233,21 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     }
   }
 
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
+    setState(() {
+      _hasSearchText = false;
+      _searchResults = const [];
+      _searchingQuery = '';
+      _loadingProducts = false;
+    });
+  }
+
+  // ── Free flow: cart ────────────────────────────────────────────────────
+
   void _addToCart(FreeReturnProduct p) {
+    HapticFeedback.lightImpact();
     final existing = _cart.where((l) => l.product.id == p.id).firstOrNull;
     setState(() {
       if (existing != null) {
@@ -207,6 +257,12 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       }
     });
   }
+
+  void _removeLine(int i) {
+    setState(() => _cart.removeAt(i));
+  }
+
+  // ── Save ───────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
     if (!_canSave) return;
@@ -264,7 +320,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
-        height: MediaQuery.of(context).size.height * 0.92,
+        height: MediaQuery.of(context).size.height * 0.94,
         decoration: const BoxDecoration(
           color: _C.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -420,7 +476,475 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
-  // ── Linked mode ────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  //   FREE MODE — IMPROVED
+  // ══════════════════════════════════════════════════════════════════════
+
+  Widget _freeBody() {
+    return Column(
+      children: [
+        _freeCustomerBar(),
+        _freeSearchField(),
+        Expanded(child: _freeContent()),
+        if (_hasSearchText && _cart.isNotEmpty) _cartSummaryBar(),
+        _footerExtras(),
+      ],
+    );
+  }
+
+  Widget _freeCustomerBar() {
+    final hasCustomer = _customer != null;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: hasCustomer
+            ? _C.primary.withOpacity(0.08)
+            : _C.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasCustomer
+              ? _C.primary.withOpacity(0.3)
+              : _C.warning.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasCustomer ? Icons.person : Icons.warning_amber_rounded,
+            color: hasCustomer ? _C.primary : _C.warning,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasCustomer ? _customer!.name : 'بدون عميل',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: hasCustomer ? _C.primaryDark : _C.warning),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (!hasCustomer)
+                  const Text('الاسترداد نقدي فقط',
+                      style: TextStyle(
+                          fontSize: 10, color: _C.textSecondary)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _openCustomerPicker,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              hasCustomer ? 'تغيير' : 'تعيين',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: hasCustomer ? _C.primary : _C.warning),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _freeSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: TextField(
+        controller: _searchCtrl,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'ابحث باسم المنتج لإضافته...',
+          prefixIcon: const Icon(Icons.search, color: _C.textSecondary),
+          suffixIcon: _hasSearchText
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 20),
+                  onPressed: _clearSearch,
+                )
+              : null,
+          filled: true,
+          fillColor: _C.surfaceGray,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _freeContent() {
+    if (_hasSearchText) {
+      if (_loadingProducts) return _searchLoadingState();
+      if (_searchResults.isEmpty) return _emptySearchState();
+      return ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        itemCount: _searchResults.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, color: _C.border),
+        itemBuilder: (_, i) => _searchResultRow(_searchResults[i]),
+      );
+    }
+
+    if (_cart.isEmpty) return _emptyCartState();
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      itemCount: _cart.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => _cartLineCard(i),
+    );
+  }
+
+  // ── Search results ─────────────────────────────────────────────────────
+
+  Widget _searchLoadingState() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: _C.primary),
+            SizedBox(height: 12),
+            Text('جاري البحث...',
+                style: TextStyle(
+                    fontSize: 13, color: _C.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptySearchState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off,
+                size: 56, color: _C.textSecondary.withOpacity(0.5)),
+            const SizedBox(height: 12),
+            Text('لا توجد نتائج لـ "$_searchingQuery"',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _C.text)),
+            const SizedBox(height: 6),
+            const Text('جرّب كلمة بحث أخرى',
+                style: TextStyle(
+                    fontSize: 12, color: _C.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _searchResultRow(FreeReturnProduct p) {
+    final cartQty = _cart
+        .where((l) => l.product.id == p.id)
+        .fold(0.0, (s, l) => s + l.quantity);
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () => _addToCart(p),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: _C.dangerLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.inventory_2_outlined,
+                    color: _C.danger, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.name,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          p.unitName.isEmpty ? '—' : p.unitName,
+                          style: const TextStyle(
+                              fontSize: 11, color: _C.textSecondary),
+                        ),
+                        if (cartQty > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: _C.success.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'في السلة: ${_fmtNum(cartQty)}',
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: _C.success),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _fmt(p.price),
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: _C.text),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _C.danger,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add, size: 14, color: Colors.white),
+                        SizedBox(width: 2),
+                        Text('إضافة',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Cart ───────────────────────────────────────────────────────────────
+
+  Widget _emptyCartState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: const BoxDecoration(
+                color: _C.surfaceGray,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.shopping_cart_outlined,
+                  size: 40, color: _C.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            const Text('لا توجد منتجات في المرتجع',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _C.text)),
+            const SizedBox(height: 6),
+            const Text('ابحث في الأعلى وأضف منتجات',
+                style: TextStyle(
+                    fontSize: 12, color: _C.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cartLineCard(int i) {
+    final line = _cart[i];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _C.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _C.dangerLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.inventory_2_outlined,
+                    color: _C.danger, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  line.product.name,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _removeLine(i),
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: _C.danger),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _QtyButton(
+                icon: Icons.remove,
+                onTap: line.quantity > 1
+                    ? () => setState(() => line.quantity -= 1)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: TextEditingController(
+                      text: _fmtNum(line.quantity))
+                    ..selection = TextSelection.collapsed(
+                        offset: _fmtNum(line.quantity).length),
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                        RegExp(r'^\d*\.?\d{0,2}')),
+                  ],
+                  textAlign: TextAlign.center,
+                  onChanged: (v) {
+                    final n = double.tryParse(v) ?? 0;
+                    if (n > 0) setState(() => line.quantity = n);
+                  },
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '0',
+                    suffixText: line.product.unitName,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: _C.border),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QtyButton(
+                icon: Icons.add,
+                onTap: () => setState(() => line.quantity += 1),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                constraints: const BoxConstraints(minWidth: 70),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _fmt(line.lineTotal),
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: _C.danger),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cartSummaryBar() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _C.danger.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _C.danger.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.shopping_cart, size: 18, color: _C.danger),
+          const SizedBox(width: 8),
+          Text('${_cart.length} منتج',
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 8),
+          Container(width: 1, height: 14, color: _C.border),
+          const SizedBox(width: 8),
+          Text(_fmt(_cartTotal),
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: _C.danger)),
+          const Spacer(),
+          TextButton(
+            onPressed: _clearSearch,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 30),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('عرض السلة',
+                style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //   LINKED MODE (unchanged)
+  // ══════════════════════════════════════════════════════════════════════
 
   Widget _linkedBody() {
     if (_customer == null) {
@@ -451,8 +975,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                           CircularProgressIndicator(color: _C.primary))),
             if (!_loadingSales && _sales.isEmpty)
               _emptyBox('لا توجد فواتير لهذا العميل'),
-            for (final s in _sales)
-              _saleTile(s),
+            for (final s in _sales) _saleTile(s),
           ],
         ),
       );
@@ -566,7 +1089,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
           Text(
             disabled
                 ? 'تم إرجاع كل الكمية'
-                : 'الكمية المتاحة للإرجاع: ${_fmtNum(item.returnableQty)} ${item.unitName}',
+                : 'الكمية المتاحة: ${_fmtNum(item.returnableQty)} ${item.unitName}',
             style: TextStyle(
                 fontSize: 11,
                 color: disabled ? _C.warning : _C.textSecondary),
@@ -579,14 +1102,15 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                   icon: Icons.remove,
                   onTap: qty > 0
                       ? () => setState(() =>
-                          _returnQty[item.id] = (qty - 1).clamp(0, item.returnableQty))
+                          _returnQty[item.id] =
+                              (qty - 1).clamp(0, item.returnableQty))
                       : null,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d*\.?\d{0,2}')),
@@ -598,7 +1122,8 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                     onChanged: (v) {
                       final n = double.tryParse(v) ?? 0;
                       setState(() =>
-                          _returnQty[item.id] = n.clamp(0, item.returnableQty));
+                          _returnQty[item.id] =
+                              n.clamp(0, item.returnableQty));
                     },
                     decoration: InputDecoration(
                       hintText: '0',
@@ -618,7 +1143,8 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
                   icon: Icons.add,
                   onTap: qty < item.returnableQty
                       ? () => setState(() =>
-                          _returnQty[item.id] = (qty + 1).clamp(0, item.returnableQty))
+                          _returnQty[item.id] =
+                              (qty + 1).clamp(0, item.returnableQty))
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -635,214 +1161,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
-  // ── Free mode ──────────────────────────────────────────────────────────
-
-  Widget _freeBody() {
-    return Column(
-      children: [
-        if (_customer != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: _customerBanner(),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _C.warning.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _C.warning.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      color: _C.warning, size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'بدون عميل — الاسترداد نقدي فقط',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: _C.warning,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _openCustomerPicker,
-                    child: const Text('إضافة عميل'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TextField(
-            controller: _searchCtrl,
-            onChanged: (_) => _searchProducts(),
-            decoration: InputDecoration(
-              hintText: 'ابحث باسم المنتج',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: _C.surfaceGray,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-        ),
-        if (_loadingProducts)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: CircularProgressIndicator(color: _C.primary),
-          )
-        else if (_searchResults.isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 180),
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: _C.surfaceGray,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.all(8),
-              itemCount: _searchResults.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final p = _searchResults[i];
-                return ListTile(
-                  dense: true,
-                  onTap: () => _addToCart(p),
-                  title: Text(p.name,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
-                  subtitle: Text('${_fmt(p.price)} / ${p.unitName}',
-                      style: const TextStyle(fontSize: 11)),
-                  trailing: const Icon(Icons.add_circle,
-                      color: _C.primary),
-                );
-              },
-            ),
-          ),
-        Expanded(
-          child: _cart.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'لم تتم إضافة أي منتجات\nابحث وأضف منتجات للمرتجع',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 13, color: _C.textSecondary),
-                    ),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  itemCount: _cart.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _cartLineTile(i),
-                ),
-        ),
-        _footerExtras(),
-      ],
-    );
-  }
-
-  Widget _cartLineTile(int i) {
-    final line = _cart[i];
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _C.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(line.product.name,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => setState(() => _cart.removeAt(i)),
-                icon: const Icon(Icons.close,
-                    size: 18, color: _C.textSecondary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              _QtyButton(
-                icon: Icons.remove,
-                onTap: line.quantity > 1
-                    ? () => setState(() => line.quantity -= 1)
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: TextEditingController(
-                      text: _fmtNum(line.quantity))
-                    ..selection = TextSelection.collapsed(
-                        offset: _fmtNum(line.quantity).length),
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(
-                        RegExp(r'^\d*\.?\d{0,2}')),
-                  ],
-                  onChanged: (v) {
-                    final n = double.tryParse(v) ?? 0;
-                    setState(() => line.quantity = n.clamp(0.01, 999));
-                  },
-                  decoration: InputDecoration(
-                    isDense: true,
-                    suffixText: line.product.unitName,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _C.border),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _QtyButton(
-                icon: Icons.add,
-                onTap: () => setState(() => line.quantity += 1),
-              ),
-              const SizedBox(width: 12),
-              Text(_fmt(line.lineTotal),
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: _C.danger)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Footer extras (refund + notes) + footer (total+save) ───────────────
+  // ── Shared: extras + footer ────────────────────────────────────────────
 
   Widget _footerExtras() {
     return Container(
@@ -851,42 +1170,53 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('طريقة الاسترداد',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            children: kRefundMethods.map((m) {
-              final enabled =
-                  m != 'credit_note' || _customer != null;
-              final selected = _refund == m;
-              return ChoiceChip(
-                label: Text(refundLabelOf(m)),
-                selected: selected,
-                onSelected: enabled
-                    ? (_) => setState(() => _refund = m)
-                    : null,
-                selectedColor: _C.dangerLight,
-                disabledColor: _C.border.withOpacity(0.3),
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  color: enabled
-                      ? (selected ? _C.danger : _C.text)
-                      : _C.textSecondary,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-                side: BorderSide(
-                    color: selected ? _C.danger : _C.border),
-                backgroundColor: Colors.white,
-              );
-            }).toList(),
+          Row(
+            children: [
+              const Text('الاسترداد:',
+                  style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 8),
+              ...kRefundMethods.map((m) {
+                final enabled = m != 'credit_note' || _customer != null;
+                final selected = _refund == m;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: ChoiceChip(
+                    label: Text(refundLabelOf(m),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: enabled
+                                ? (selected ? _C.danger : _C.text)
+                                : _C.textSecondary,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500)),
+                    selected: selected,
+                    onSelected: enabled
+                        ? (_) => setState(() => _refund = m)
+                        : null,
+                    selectedColor: _C.dangerLight,
+                    disabledColor: _C.border.withOpacity(0.3),
+                    side: BorderSide(
+                        color: selected ? _C.danger : _C.border),
+                    backgroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize:
+                        MaterialTapTargetSize.shrinkWrap,
+                  ),
+                );
+              }),
+            ],
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _notesCtrl,
             maxLines: 1,
+            style: const TextStyle(fontSize: 13),
             decoration: InputDecoration(
               hintText: 'ملاحظات (اختياري)',
+              hintStyle:
+                  const TextStyle(fontSize: 12, color: _C.textSecondary),
               isDense: true,
               filled: true,
               fillColor: Colors.white,
@@ -955,7 +1285,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
-  // ── Shared widgets ─────────────────────────────────────────────────────
+  // ── Shared small widgets ───────────────────────────────────────────────
 
   Widget _customerBanner() {
     return Container(

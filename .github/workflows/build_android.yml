@@ -69,53 +69,24 @@ jobs:
           }
           EOF
 
-      # ⬇️⬇️⬇️ حماية تلقائية للوجو
-      - name: Ensure logo exists (auto-generate if missing)
+      # ⬇️⬇️⬇️ الحل: توليد الأيقونات بشكل اختياري (لن يفشل البناء)
+      - name: Generate Launcher Icons (optional)
+        continue-on-error: true
         run: |
-          mkdir -p assets/images
-          if [ -f "assets/images" ]; then
-            echo "⚠️  assets/images exists as file — removing"
-            rm -f "assets/images"
-            mkdir -p assets/images
-          fi
-
-          if [ ! -f "assets/images/logo.png" ]; then
-            echo "⚠️  logo.png not found — generating placeholder (Hesabi green)"
-            python3 <<'PY'
-import struct, zlib
-
-def create_png(width, height, r, g, b):
-    signature = b'\x89PNG\r\n\x1a\n'
-    def chunk(t, d):
-        return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-    ihdr = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
-    raw = b''
-    for y in range(height):
-        row = b'\x00'
-        for x in range(width):
-            cx, cy = width/2, height/2
-            dist = ((x-cx)**2 + (y-cy)**2)**0.5
-            if dist < width * 0.35:
-                row += bytes([255, 255, 255])
-            elif dist < width * 0.42:
-                row += bytes([0, 105, 92])
-            else:
-                row += bytes([r, g, b])
-        raw += row
-    return signature + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
-
-with open('assets/images/logo.png', 'wb') as f:
-    f.write(create_png(512, 512, 0, 137, 123))
-print("✅ Placeholder logo created (512x512)")
-PY
-          else
-            echo "✅ logo.png found:"
+          echo "🔍 Checking for logo..."
+          if [ -f "assets/images/logo.png" ]; then
+            echo "✅ Logo found at assets/images/logo.png"
             ls -la assets/images/logo.png
+            echo "🎨 Generating custom launcher icons..."
+            dart run flutter_launcher_icons
+            echo "✅ Custom icons generated"
+          else
+            echo "⚠️  logo.png NOT found at assets/images/logo.png"
+            echo "⚠️  Skipping launcher icons generation - using default Flutter icon"
+            echo "💡 To add a custom icon later:"
+            echo "   1. Upload logo.png to assets/images/ in the repository"
+            echo "   2. Re-run this workflow"
           fi
-
-      # ⬇️⬇️⬇️ توليد الأيقونات
-      - name: Generate Launcher Icons
-        run: dart run flutter_launcher_icons
 
       - name: Set minSdk 23 / compileSdk 36 / targetSdk 36
         run: |
@@ -276,13 +247,8 @@ PY
             ## 📱 Hesabi Sales Rep — آخر إصدار
 
             **رقم البناء:** #${{ github.run_number }}
-            **تاريخ البناء:** ${{ github.event.head_commit.timestamp || 'auto' }}
             **حجم الملف:** ${{ env.APK_SIZE }}
             **Commit:** `${{ github.sha }}`
 
-            ---
-
             ### 📥 رابط التحميل المباشر (دائم):
-            [**اضغط هنا لتحميل أحدث نسخة**](https://github.com/itqanpos/hesabi_sales_rep/releases/latest/download/hesabi-sales-rep.apk)
-
-            **أو انسخ هذا الرابط للمفضلة:**
+            [**اضغط هنا**](https://github.com/itqanpos/hesabi_sales_rep/releases/latest/download/hesabi-sales-rep.apk)

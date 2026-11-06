@@ -42,6 +42,23 @@ class CollectionsRepository {
         .toList();
   }
 
+  /// فواتير العميل — للمرجعية فقط (بدون "متبقي")
+  Future<List<CustomerInvoice>> getCustomerInvoices({
+    required String companyId,
+    required String customerId,
+    int limit = 20,
+  }) async {
+    final res = await _sb.rpc('get_customer_invoices', params: {
+      'p_company_id': companyId,
+      'p_customer_id': customerId,
+      'p_limit': limit,
+    });
+    return (res as List)
+        .map((e) => CustomerInvoice.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// ⚠️ deprecated — استخدم getCustomerInvoices
   Future<List<UnpaidInvoice>> getCustomerUnpaidInvoices({
     required String companyId,
     required String customerId,

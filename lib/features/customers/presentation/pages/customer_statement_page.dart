@@ -1,11 +1,10 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';          // ⬅️ السطر المضاف
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../sales/data/invoice_settings_repository.dart';
-import '../../../sales/presentation/widgets/bluetooth_printer_service.dart';
-import '../../../sales/presentation/widgets/direct_invoice_printer.dart'; // Assuming we might need it, though statement is PDF only
 import '../../data/customers_repository.dart';
 import '../../domain/customer_models.dart';
 import '../widgets/statement_pdf_builder.dart';
@@ -154,7 +153,8 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: _C.primary)),
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: _C.primary)),
     );
 
     try {
@@ -170,7 +170,7 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
       );
       if (!mounted) return;
       Navigator.of(context).pop();
-      
+
       await Printing.layoutPdf(
         onLayout: (_) => bytes,
         name: 'Statement_${widget.customerName}',
@@ -179,7 +179,8 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل الطباعة: $e'), backgroundColor: _C.danger),
+        SnackBar(
+            content: Text('فشل الطباعة: $e'), backgroundColor: _C.danger),
       );
     }
   }
@@ -200,7 +201,8 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
         appBar: AppBar(
           backgroundColor: _C.primary,
           foregroundColor: Colors.white,
-          title: const Text('كشف حساب', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('كشف حساب',
+              style: TextStyle(fontWeight: FontWeight.bold)),
           actions: [
             IconButton(
               icon: const Icon(Icons.print),
@@ -247,8 +249,7 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  size: 48, color: _C.danger),
+              const Icon(Icons.error_outline, size: 48, color: _C.danger),
               const SizedBox(height: 12),
               Text(_error!,
                   textAlign: TextAlign.center,
@@ -273,8 +274,8 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
                   size: 56, color: _C.textSecondary),
               SizedBox(height: 12),
               Text('لا توجد حركات في هذه الفترة',
-                  style: TextStyle(
-                      color: _C.textSecondary, fontSize: 15)),
+                  style:
+                      TextStyle(color: _C.textSecondary, fontSize: 15)),
             ],
           ),
         ),
@@ -534,15 +535,11 @@ class _EntryTile extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: entry.isSale
-                      ? _C.dangerLight
-                      : _C.successLight,
+                  color: entry.isSale ? _C.dangerLight : _C.successLight,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  entry.isSale
-                      ? Icons.receipt_long
-                      : Icons.payments,
+                  entry.isSale ? Icons.receipt_long : Icons.payments,
                   color: entry.isSale ? _C.danger : _C.success,
                   size: 22,
                 ),
@@ -557,8 +554,7 @@ class _EntryTile extends StatelessWidget {
                           ? 'فاتورة #${entry.refNumber ?? '—'}'
                           : 'دفعة ${entry.methodLabel}',
                       style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700),
+                          fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -577,8 +573,7 @@ class _EntryTile extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
-                    color:
-                        entry.isSale ? _C.danger : _C.success),
+                    color: entry.isSale ? _C.danger : _C.success),
               ),
             ],
           ),

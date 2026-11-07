@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../sales/data/invoice_settings_repository.dart';
 import '../../../sales/data/sales_history_repository.dart';
-import '../../../sales/domain/sales_models.dart';               // ⬅️ السطر المضاف
+import '../../../sales/domain/sales_models.dart';
 import '../../../sales/presentation/widgets/invoice_printer.dart';
 import '../../data/pos_repository.dart';
 import '../../domain/pos_models.dart';
@@ -162,6 +162,7 @@ class _PosPageState extends State<PosPage> {
     }).toList();
   }
 
+  // ⬇️ التعديل: تفريغ البحث بعد الإضافة + التركيز على حقل الكمية
   Future<void> _addProduct(PosProduct product) async {
     final unit = await PosUnitSelectorSheet.show(context, product);
     if (unit == null) return;
@@ -180,7 +181,12 @@ class _PosPageState extends State<PosPage> {
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
 
-    setState(() => _focusLineKey = lineKey);
+    // ✅ تفريغ البحث + التركيز على حقل الكمية
+    _searchCtrl.clear();
+    setState(() {
+      _searchQuery = '';
+      _focusLineKey = lineKey;
+    });
   }
 
   void _onQuantityChanged(int i, double q) => _cart.updateQuantity(i, q);
@@ -315,7 +321,6 @@ class _PosPageState extends State<PosPage> {
     );
   }
 
-  // ⬇️ الآن `SaleDetail` معرّف (بسبب import sales_models.dart)
   Future<SaleDetail?> _loadSaleDetail(String saleId) async {
     try {
       return await _salesRepo.getSaleDetail(

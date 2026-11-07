@@ -52,58 +52,90 @@ class _PosPageState extends State<PosPage> {
   String? _error;
   String _searchQuery = '';
 
+  // ⬇️ Cache في الذاكرة (5 دقائق)
+  static DateTime? _lastLoad;
+  static List<PosProduct>? _cachedProducts;
+  static List<PosCustomer>? _cachedCustomers;
+
   @override
   void initState() {
     super.initState();
     _repo = PosRepository(Supabase.instance.client);
     _salesRepo = SalesHistoryRepository(Supabase.instance.client);
-    _cart.addListener(_onCartChanged);
     _loadData();
   }
 
   @override
   void dispose() {
-    _cart.removeListener(_onCartChanged);
     _cart.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  void _onCartChanged() => setState(() {});
+  // ⬇️ تحميل متوازي — كل المستقبلات تبدأ معاً، تُنتظر معاً
+  Future<void> _loadData({bool force = false}) async {
+    // استخدام cache إذا حديث (< 5 دقائق)
+    if (!force &&
+        _lastLoad != null &&
+        DateTime.now().difference(_lastLoad!).inMinutes < 5 &&
+        _cachedProducts != null &&
+        _cachedCustomers != null) {
+      setState(() {
+        _allProducts = _cachedProducts!;
+        _customers = _cachedCustomers!;
+        _loading = false;
+      });
+      return;
+    }
 
-  Future<void> _loadData() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+
     try {
       final client = Supabase.instance.client;
       final userId = client.auth.currentUser?.id;
 
+      // ⬇️ بدء كل الطلبات في نفس اللحظة (Parallel)
+      final productsFuture =
+          _repo.loadProducts(widget.companyId, widget.branchId);
+      final customersFuture = _repo.loadCustomers(widget.companyId);
+      final settingsFuture =
+          InvoiceSettingsRepository(client).loadEffective(widget.companyId);
+
+      Future<Map<String, dynamic>?>? companyFuture;
       if (userId != null) {
-        final member = await client
+        companyFuture = client
             .from('company_members')
             .select('companies(name, phone)')
             .eq('user_id', userId)
             .eq('is_active', true)
             .limit(1)
             .maybeSingle();
-        final comp = member?['companies'] as Map?;
-        _companyName = (comp?['name'] as String?) ?? 'شركة';
-        _companyPhone = (comp?['phone'] as String?) ?? '';
+      }
+
+      // ⬇️ الآن ننتظر — لكن كلها بدأت معاً
+      final products = await productsFuture;
+      final customers = await customersFuture;
+      _invoiceSettings = await settingsFuture;
+
+      if (companyFuture != null) {
+        final member = await companyFuture;
+        if (member != null) {
+          final comp = member['companies'] as Map?;
+          _companyName = (comp?['name'] as String?) ?? 'شركة';
+          _companyPhone = (comp?['phone'] as String?) ?? '';
+        }
         _repName =
             client.auth.currentUser?.userMetadata?['full_name'] as String? ??
                 client.auth.currentUser?.email ??
                 '';
-
-        final settingsRepo = InvoiceSettingsRepository(client);
-        _invoiceSettings =
-            await settingsRepo.loadEffective(widget.companyId);
       }
 
-      final products =
-          await _repo.loadProducts(widget.companyId, widget.branchId);
-      final customers = await _repo.loadCustomers(widget.companyId);
+      _cachedProducts = products;
+      _cachedCustomers = customers;
+      _lastLoad = DateTime.now();
 
       if (!mounted) return;
       setState(() {
@@ -225,12 +257,7 @@ class _PosPageState extends State<PosPage> {
       );
       if (!mounted) return;
       if (saleDetail == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تحميل الفاتورة للطباعة'),
-            backgroundColor: _C.danger,
-          ),
-        );
+        _snack('تعذر تحميل الفاتورة للطباعة');
         return;
       }
       await InvoicePrinter.print(
@@ -244,12 +271,7 @@ class _PosPageState extends State<PosPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشلت الطباعة: $e'),
-          backgroundColor: _C.danger,
-        ),
-      );
+      _snack('فشلت الطباعة: $e');
     }
   }
 
@@ -292,9 +314,7 @@ class _PosPageState extends State<PosPage> {
   Future<void> _openScanner() async {
     final result = await Navigator.push<String>(
       context,
-      MaterialPageRoute(
-        builder: (_) => const PosBarcodeScannerPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const PosBarcodeScannerPage()),
     );
     if (result != null && result.isNotEmpty) {
       _searchCtrl.text = result;
@@ -329,7 +349,7 @@ class _PosPageState extends State<PosPage> {
                 Text(_error!, textAlign: TextAlign.center),
                 const SizedBox(height: 12),
                 ElevatedButton(
-                    onPressed: _loadData,
+                    onPressed: () => _loadData(force: true),
                     child: const Text('إعادة المحاولة')),
               ],
             ),
@@ -339,8 +359,6 @@ class _PosPageState extends State<PosPage> {
     }
 
     final isSearching = _searchQuery.trim().isNotEmpty;
-    final filtered = _filteredProducts;
-    final cart = _cart.state;
 
     return Scaffold(
       backgroundColor: _C.bg,
@@ -384,10 +402,14 @@ class _PosPageState extends State<PosPage> {
       ),
       body: Column(
         children: [
-          PosCustomerBar(
-            customer: cart.customer,
-            onTap: _openCustomerPicker,
-            onClear: () => _cart.setCustomer(null),
+          // ⬇️ Customer bar — ValueListenableBuilder (يعيد البناء عند تغيير العميل فقط)
+          ValueListenableBuilder<PosCartState>(
+            valueListenable: _cart,
+            builder: (_, cart, __) => PosCustomerBar(
+              customer: cart.customer,
+              onTap: _openCustomerPicker,
+              onClear: () => _cart.setCustomer(null),
+            ),
           ),
           PosSearchField(
             controller: _searchCtrl,
@@ -398,9 +420,14 @@ class _PosPageState extends State<PosPage> {
               setState(() => _searchQuery = '');
             },
           ),
+          // ⬇️ Middle section — ValueListenableBuilder (يعيد البناء عند تغيير السلة فقط)
           Expanded(
-            child: isSearching
-                ? Column(
+            child: ValueListenableBuilder<PosCartState>(
+              valueListenable: _cart,
+              builder: (_, cart, __) {
+                if (isSearching) {
+                  final filtered = _filteredProducts;
+                  return Column(
                     children: [
                       _sectionLabel(
                           text: 'نتائج البحث',
@@ -427,23 +454,29 @@ class _PosPageState extends State<PosPage> {
                         ),
                       ),
                     ],
-                  )
-                : PosCartList(
-                    lines: cart.lines,
-                    onQuantityChanged: _onQuantityChanged,
-                    onPriceChanged: _onPriceChanged,
-                    onRemove: _onRemoveLine,
-                  ),
+                  );
+                }
+                return PosCartList(
+                  lines: cart.lines,
+                  onQuantityChanged: _onQuantityChanged,
+                  onPriceChanged: _onPriceChanged,
+                  onRemove: _onRemoveLine,
+                );
+              },
+            ),
           ),
-          // ⬇️ إزالة viewInsets من Bottom Panel — لا تصعد مع الكيبورد
+          // ⬇️ Bottom Panel — ValueListenableBuilder + MediaQuery.removeViewInsets
           MediaQuery.removeViewInsets(
             context: context,
             removeBottom: true,
-            child: PosBottomPanel(
-              cart: cart,
-              onDiscountChanged: _onDiscountChanged,
-              onClearTap: _onClearCart,
-              onPayTap: _openPayment,
+            child: ValueListenableBuilder<PosCartState>(
+              valueListenable: _cart,
+              builder: (_, cart, __) => PosBottomPanel(
+                cart: cart,
+                onDiscountChanged: _onDiscountChanged,
+                onClearTap: _onClearCart,
+                onPayTap: _openPayment,
+              ),
             ),
           ),
         ],
@@ -451,7 +484,6 @@ class _PosPageState extends State<PosPage> {
     );
   }
 
-  // Section label — خط أفقي طويل على اليمين (مطابق Hesabi)
   Widget _sectionLabel({
     required String text,
     required IconData icon,
@@ -462,7 +494,6 @@ class _PosPageState extends State<PosPage> {
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
       child: Row(
         children: [
-          // خط أفقي طويل على اليمين (مثل Hesabi)
           Expanded(
             child: Container(
               height: 1.5,
@@ -577,17 +608,15 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
                           style: TextStyle(color: _C.textSecondary)))
                   : ListView.separated(
                       itemCount: _filtered.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1),
+                      separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final c = _filtered[i];
                         return ListTile(
                           title: Text(c.name,
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700)),
-                          subtitle: c.phone != null
-                              ? Text(c.phone!)
-                              : null,
+                          subtitle:
+                              c.phone != null ? Text(c.phone!) : null,
                           trailing: Text(
                             '${c.balance.toStringAsFixed(2)} ج.م',
                             style: TextStyle(

@@ -6,102 +6,127 @@ import '../../domain/pos_models.dart';
 class PosCartLineTile extends StatelessWidget {
   final PosCartLine line;
   final ValueChanged<double> onQuantityChanged;
+  final ValueChanged<double> onPriceChanged;
   final VoidCallback onRemove;
 
   const PosCartLineTile({
     super.key,
     required this.line,
     required this.onQuantityChanged,
+    required this.onPriceChanged,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _C.border),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: _C.border, width: 0.5),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
+          // اسم المنتج (يمين — Expanded)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
                   line.productName,
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w700),
+                      fontSize: 12.5, fontWeight: FontWeight.w700),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    size: 20, color: _C.danger),
-                onPressed: onRemove,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'حذف',
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${line.unitPrice.toStringAsFixed(2)} ج.م / ${line.unitName}',
-            style: const TextStyle(fontSize: 11, color: _C.textSecondary),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _QtyBtn(
-                icon: Icons.remove,
-                onTap: () => onQuantityChanged(line.quantity - 1),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 56,
-                child: TextField(
-                  textAlign: TextAlign.center,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-                  ],
-                  controller: TextEditingController(
-                      text: _fmtQty(line.quantity))
-                    ..selection = TextSelection.collapsed(
-                        offset: _fmtQty(line.quantity).length),
+                Text(
+                  line.unitName,
                   style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800),
-                  onChanged: (v) {
-                    final n = double.tryParse(v) ?? 0;
-                    if (n > 0) onQuantityChanged(n);
-                  },
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    border: OutlineInputBorder(),
-                  ),
+                      fontSize: 10, color: _C.textSecondary),
                 ),
-              ),
-              const SizedBox(width: 6),
-              _QtyBtn(
-                icon: Icons.add,
-                onTap: () => onQuantityChanged(line.quantity + 1),
-              ),
-              const Spacer(),
-              Text(
-                '${line.lineTotal.toStringAsFixed(2)} ج.م',
-                style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: _C.primary),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // حقل الكمية
+          SizedBox(
+            width: 46,
+            height: 30,
+            child: TextField(
+              textAlign: TextAlign.center,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              controller: TextEditingController(
+                  text: _fmtQty(line.quantity))
+                ..selection = TextSelection.collapsed(
+                    offset: _fmtQty(line.quantity).length),
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w800),
+              onChanged: (v) {
+                final n = double.tryParse(v) ?? 0;
+                if (n > 0) onQuantityChanged(n);
+              },
+              decoration: _inputDec(),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // حقل السعر
+          SizedBox(
+            width: 64,
+            height: 30,
+            child: TextField(
+              textAlign: TextAlign.center,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              controller: TextEditingController(
+                  text: line.unitPrice.toStringAsFixed(2))
+                ..selection = TextSelection.collapsed(
+                    offset: line.unitPrice.toStringAsFixed(2).length),
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w700),
+              onChanged: (v) {
+                final n = double.tryParse(v) ?? 0;
+                if (n > 0) onPriceChanged(n);
+              },
+              decoration: _inputDec(),
+            ),
+          ),
+          const SizedBox(width: 6),
+
+          // الإجمالي
+          SizedBox(
+            width: 66,
+            child: Text(
+              '${line.lineTotal.toStringAsFixed(2)} ج.م',
+              textAlign: TextAlign.left,
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: _C.primary),
+            ),
+          ),
+          const SizedBox(width: 2),
+
+          // زر الحذف (يسار)
+          InkWell(
+            onTap: onRemove,
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              child: const Icon(Icons.close,
+                  size: 16, color: _C.textSecondary),
+            ),
           ),
         ],
       ),
@@ -112,37 +137,26 @@ class PosCartLineTile extends StatelessWidget {
     if (v == v.roundToDouble()) return v.toStringAsFixed(0);
     return v.toStringAsFixed(2);
   }
-}
 
-class _QtyBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _QtyBtn({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: _C.surfaceGray,
+  InputDecoration _inputDec() => InputDecoration(
+        isDense: true,
+        filled: true,
+        fillColor: _C.surfaceGray,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: _C.border),
+          borderSide: const BorderSide(color: _C.border),
         ),
-        child: Icon(icon, size: 16, color: _C.text),
-      ),
-    );
-  }
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: const BorderSide(color: _C.border),
+        ),
+      );
 }
 
 class _C {
   static const primary = Color(0xFF00897B);
-  static const danger = Color(0xFFC62828);
   static const surfaceGray = Color(0xFFF5F5F5);
   static const border = Color(0xFFE0E0E0);
-  static const text = Color(0xFF1A1A1A);
   static const textSecondary = Color(0xFF757575);
 }

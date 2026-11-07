@@ -1,42 +1,48 @@
 import 'package:flutter/material.dart';
+
+import '../../domain/pos_models.dart';
 import 'pos_cart_line_tile.dart';
 
 class PosCartList extends StatelessWidget {
-  final List<Map<String, dynamic>> cart;
-  final Function(int, double) onUpdateQty;
-  final Function(int, double) onUpdatePrice;
-  final Function(int) onRemove;
+  final List<PosCartLine> lines;
+  final void Function(int index, double newQty) onQuantityChanged;
+  final void Function(int index) onRemove;
 
-  const PosCartList({super.key, required this.cart, required this.onUpdateQty, required this.onUpdatePrice, required this.onRemove});
+  const PosCartList({
+    super.key,
+    required this.lines,
+    required this.onQuantityChanged,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (cart.isEmpty) {
+    if (lines.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('السلة فارغة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey)),
-            Text('ابحث عن منتج أو امسح الباركود لإضافته.', style: TextStyle(color: Colors.grey)),
+            Icon(Icons.shopping_cart_outlined,
+                size: 56, color: Color(0xFF757575)),
+            SizedBox(height: 8),
+            Text('السلة فارغة',
+                style: TextStyle(color: Color(0xFF757575), fontSize: 14)),
+            SizedBox(height: 2),
+            Text('ابحث عن منتج لإضافته',
+                style: TextStyle(color: Color(0xFF757575), fontSize: 11)),
           ],
         ),
       );
     }
-
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: cart.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        return PosCartLineTile(
-          line: cart[index],
-          onQtyChanged: (q) => onUpdateQty(index, q),
-          onPriceChanged: (p) => onUpdatePrice(index, p),
-          onRemove: () => onRemove(index),
-        );
-      },
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: lines.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => PosCartLineTile(
+        line: lines[i],
+        onQuantityChanged: (q) => onQuantityChanged(i, q),
+        onRemove: () => onRemove(i),
+      ),
     );
   }
 }

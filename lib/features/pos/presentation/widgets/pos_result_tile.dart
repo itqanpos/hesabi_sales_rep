@@ -15,15 +15,21 @@ class PosResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inStock = product.hasStock;
+    final qty = product.stockQty.toInt();
+    // شارة المخزون: 22 متاح / نفد / 6 متبقي
+    final (Color badgeBg, Color badgeFg, String badgeText) = !inStock
+        ? (_C.dangerLight, _C.danger, 'نفد')
+        : qty <= 10
+            ? (_C.warningLight, _C.warning, '$qty متبقي')
+            : (_C.successLight, _C.success, '$qty متاح');
 
     return InkWell(
       onTap: inStock ? onTap : null,
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            // أيقونة المنتج
+            // أيقونة مربعة (يسار)
             Container(
               width: 42,
               height: 42,
@@ -35,7 +41,8 @@ class PosResultTile extends StatelessWidget {
                   color: _C.primary, size: 22),
             ),
             const SizedBox(width: 10),
-            // الاسم + الوحدة
+
+            // الاسم + الوحدة (وسط)
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,7 +51,7 @@ class PosResultTile extends StatelessWidget {
                   Text(
                     product.name,
                     style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w700),
+                        fontSize: 13.5, fontWeight: FontWeight.w700),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -58,37 +65,39 @@ class PosResultTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // شارة المخزون
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color:
-                    inStock ? _C.successLight : _C.dangerLight,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                inStock
-                    ? '${product.stockQty.toInt()} متاح'
-                    : 'نفذ',
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: inStock ? _C.success : _C.danger),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // السعر
-            Text(
-              '${product.defaultPrice.toStringAsFixed(2)} ج.م',
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: _C.primary),
+
+            // شارة المخزون + السعر + سهم
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: badgeBg,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: badgeFg),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${product.defaultPrice.toStringAsFixed(2)} ج.م',
+                  style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: _C.primary),
+                ),
+              ],
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_left,
-                size: 20, color: _C.textSecondary),
+            const Icon(Icons.chevron_left, size: 18, color: _C.textSecondary),
           ],
         ),
       ),
@@ -101,6 +110,8 @@ class _C {
   static const primaryLight = Color(0xFFE0F2F1);
   static const success = Color(0xFF2E7D32);
   static const successLight = Color(0xFFE8F5E9);
+  static const warning = Color(0xFFE65100);
+  static const warningLight = Color(0xFFFFF3E0);
   static const danger = Color(0xFFC62828);
   static const dangerLight = Color(0xFFFFEBEE);
   static const textSecondary = Color(0xFF757575);

@@ -31,8 +31,7 @@ jobs:
           mkdir -p assets/fonts
           curl -fL -o assets/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"
           cp assets/fonts/Cairo-Regular.ttf assets/fonts/Cairo-Bold.ttf
-          echo "✅ Fonts downloaded:"
-          ls -la assets/fonts/
+          echo "✅ Fonts downloaded"
 
       - name: Install dependencies
         run: flutter pub get
@@ -48,27 +47,25 @@ jobs:
           }
           EOF
 
-      # ⬇️⬇️⬇️ توليد الأيقونات بشكل اختياري
       - name: Generate Launcher Icons (optional)
         continue-on-error: true
         run: |
-          echo "🔍 Checking for logo..."
           if [ -f "assets/images/logo.png" ]; then
-            echo "✅ Logo found"
-            ls -la assets/images/logo.png
             dart run flutter_launcher_icons
-            echo "✅ Custom icons generated"
           else
-            echo "⚠️  logo.png NOT found - using default Flutter icon"
+            echo "⚠️ logo.png not found - using default icon"
           fi
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      # ⬇️ تحسينات الأداء — HTML renderer + tree-shake-icons
       - name: Build Web
         run: |
           flutter build web --release \
             --base-href=/hesabi_sales_rep/ \
+            --web-renderer html \
+            --tree-shake-icons \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 

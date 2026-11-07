@@ -18,64 +18,47 @@ class PosCustomerBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasCustomer = customer != null;
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: hasCustomer ? _C.primaryLight : Colors.white,
-          border: const Border(
-            bottom: BorderSide(color: _C.border, width: 1),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              hasCustomer ? Icons.person : Icons.person_outline,
-              color: hasCustomer ? _C.primaryDark : _C.textSecondary,
-              size: 22,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    hasCustomer ? customer!.name : 'تحديد عميل (اختياري)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight:
-                          hasCustomer ? FontWeight.w700 : FontWeight.w500,
-                      color: hasCustomer ? _C.primaryDark : _C.textSecondary,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Material(
+        color: _C.primaryLight,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.person,
+                    color: _C.primaryDark, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    hasCustomer ? customer!.name : 'عميل نقدي',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _C.primaryDark,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (hasCustomer && customer!.phone != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      customer!.phone!,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: _C.textSecondary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                ),
+                Text(
+                  'تغيير',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _C.primaryDark.withOpacity(0.8),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.chevron_left,
+                    size: 18, color: _C.primaryDark.withOpacity(0.8)),
+              ],
             ),
-            if (hasCustomer && onClear != null)
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: _C.primaryDark),
-                onPressed: onClear,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'إزالة العميل',
-              )
-            else
-              const Icon(Icons.chevron_left, color: _C.textSecondary),
-          ],
+          ),
         ),
       ),
     );
@@ -85,6 +68,4 @@ class PosCustomerBar extends StatelessWidget {
 class _C {
   static const primaryDark = Color(0xFF00695C);
   static const primaryLight = Color(0xFFE0F2F1);
-  static const border = Color(0xFFE0E0E0);
-  static const textSecondary = Color(0xFF757575);
 }

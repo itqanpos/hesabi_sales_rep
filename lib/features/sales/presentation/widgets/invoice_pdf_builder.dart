@@ -38,7 +38,7 @@ class PdfInvoiceBuilder {
       } catch (_) {}
     }
 
-    // 2. حساب الارتفاع بشكل مرن (لضمان عدم قطع النص من الأعلى)
+    // 2. حساب الارتفاع بشكل مرن
     final lineCount = sale.items.length;
     final baseMm = 170.0 + (lineCount * 15.0);
     final pageFormat = PdfPageFormat(
@@ -55,7 +55,7 @@ class PdfInvoiceBuilder {
     document.addPage(
       pw.Page(
         pageFormat: pageFormat,
-        margin: const pw.EdgeInsets.all(6), // هوامش مناسبة للإيصالات
+        margin: const pw.EdgeInsets.all(6),
         textDirection: pw.TextDirection.rtl,
         build: (pw.Context context) => pw.Container(
           color: PdfColors.white,
@@ -96,14 +96,13 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   التنسيق الأساسي (مع تثبيت حجم الخط للجداول لمنع التشوه)
+  //   التنسيق الأساسي
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.TextStyle _style({
     required double baseSize,
     required InvoiceSettings settings,
     bool forceBold = false,
   }) {
-    // لا نطبق fontScale على الجداول حتى لا تتشوه، نطبقه فقط على العناوين الكبيرة
     final size = baseSize * (baseSize > 10 ? settings.fontScale : 1.0);
     return pw.TextStyle(
       fontSize: size,
@@ -169,7 +168,7 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   Meta Block (تنسيق أفضل للبيانات)
+  //   Meta Block
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildMetaBlock(
     SaleDetail sale, {
@@ -210,7 +209,7 @@ class PdfInvoiceBuilder {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.SizedBox(
-            width: 60, // عرض ثابت للعنوان
+            width: 60,
             child: pw.Text(
               '$label:',
               style: _style(baseSize: 8, settings: settings, forceBold: true),
@@ -231,19 +230,19 @@ class PdfInvoiceBuilder {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //   Items Table (عرض أعمدة متناسب مع 80mm)
+  //   Items Table (معكوسة بالكامل: م على اليمين، الإجمالي على اليسار)
   // ═══════════════════════════════════════════════════════════════════════════
   static pw.Widget _buildItemsTable(
     SaleDetail sale,
     InvoiceSettings settings,
   ) {
-    // نسب العرض لضمان عدم التشوه
+    // ترتيب الأعمدة من اليسار إلى اليمين (0 = أقصى اليسار، 4 = أقصى اليمين)
     final columnWidths = <int, pw.TableColumnWidth>{
-      0: const pw.FlexColumnWidth(0.5), // م
-      1: const pw.FlexColumnWidth(2.5), // الإجمالي
-      2: const pw.FlexColumnWidth(1.5), // السعر
-      3: const pw.FlexColumnWidth(1.5), // الكمية
-      4: const pw.FlexColumnWidth(4.0), // الصنف
+      0: const pw.FlexColumnWidth(2.0), // الإجمالي (يسار)
+      1: const pw.FlexColumnWidth(1.5), // السعر
+      2: const pw.FlexColumnWidth(1.5), // الكمية
+      3: const pw.FlexColumnWidth(4.0), // الصنف
+      4: const pw.FlexColumnWidth(0.5), // م (يمين)
     };
 
     double totalQuantity = 0;
@@ -256,11 +255,11 @@ class PdfInvoiceBuilder {
       pw.TableRow(
         decoration: const pw.BoxDecoration(color: PdfColors.grey300),
         children: [
-          _cell('م', settings: settings, bold: true, center: true),
           _cell('الإجمالي', settings: settings, bold: true, center: true),
           _cell('السعر', settings: settings, bold: true, center: true),
           _cell('الكمية', settings: settings, bold: true, center: true),
           _cell('الصنف', settings: settings, bold: true, right: true),
+          _cell('م', settings: settings, bold: true, center: true),
         ],
       ),
     ];
@@ -270,11 +269,11 @@ class PdfInvoiceBuilder {
       final line = sale.items[i];
       rows.add(pw.TableRow(
         children: [
-          _cell('${i + 1}', settings: settings, center: true),
           _cell(_money(line.lineTotal, settings), settings: settings, center: true, bold: true),
           _cell(_money(line.unitPrice, settings), settings: settings, center: true),
           _cell('${_formatQty(line.quantity)}\n${line.unitName}', settings: settings, center: true),
           _cell(line.productName, settings: settings, right: true),
+          _cell('${i + 1}', settings: settings, center: true),
         ],
       ));
     }
@@ -283,11 +282,11 @@ class PdfInvoiceBuilder {
     rows.add(pw.TableRow(
       decoration: const pw.BoxDecoration(color: PdfColors.grey100),
       children: [
-        _cell('', settings: settings),
         _cell(_money(sale.total, settings), settings: settings, center: true, bold: true),
         _cell('', settings: settings),
         _cell(_formatQty(totalQuantity), settings: settings, center: true, bold: true),
         _cell('المجموع الفرعي', settings: settings, bold: true, right: true),
+        _cell('', settings: settings),
       ],
     ));
 
@@ -314,7 +313,7 @@ class PdfInvoiceBuilder {
         textAlign: center
             ? pw.TextAlign.center
             : (right ? pw.TextAlign.right : pw.TextAlign.left),
-        maxLines: 2, // يسمح بسطرين للاسم والكمية
+        maxLines: 2,
         overflow: pw.TextOverflow.clip,
       ),
     );

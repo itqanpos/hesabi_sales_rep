@@ -49,7 +49,7 @@ class PosRepository {
 
     // ═══════════════════════════════════════════════════════════════════
     // 🔴 الحماية الحرجة: paid_amount لا يتجاوز total أبداً
-    //    (CHECK constraint: sales_paid_amount_not_exceeding_total)
+    // (يمنع CHECK constraint: sales_paid_amount_not_exceeding_total)
     // ═══════════════════════════════════════════════════════════════════
     final double appliedToSale =
         (totalPaid > saleTotal) ? saleTotal : totalPaid;
@@ -64,8 +64,7 @@ class PosRepository {
         'customer_id': customerId,
         'items': lines.map((l) => l.toSaleItem()).toList(),
         'payment_method': primaryMethod,
-        // ✅ القيمة المحسوبة — لا تتجاوز saleTotal
-        'paid_amount': appliedToSale,
+        'paid_amount': appliedToSale, // لا يتجاوز saleTotal
         'discount': discount,
         'notes': notes,
       },
@@ -87,7 +86,6 @@ class PosRepository {
           },
         });
       } catch (e) {
-        // تجاهل — لا نفشل البيع بسبب فشل تسجيل الزيادة
         print('Failed to record balance payment: $e');
       }
     }

@@ -17,7 +17,6 @@ class PosPaymentSheet extends StatefulWidget {
     required this.repo,
   });
 
-  /// يُعيد `saleId` إذا نجح البيع، `null` إذا أُغلقت النافذة.
   static Future<String?> show(
     BuildContext context, {
     required String companyId,
@@ -58,8 +57,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
   @override
   void initState() {
     super.initState();
+    // القيمة الافتراضية = الإجمالي المطلوب (رصيد سابق + فاتورة)
     _payments = [
-      _PaymentInput(method: 'cash', amount: widget.cart.total),
+      _PaymentInput(method: 'cash', amount: _settlementTotal),
     ];
   }
 
@@ -76,13 +76,14 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
   double get _settlementTotal => _customerBalance + _cartTotal;
   double get _totalPaid =>
       _payments.fold(0.0, (s, p) => s + p.amount);
+
   double get _remaining {
-    final r = _cartTotal - _totalPaid;
+    final r = _settlementTotal - _totalPaid;
     return r > 0 ? r : 0;
   }
 
   double get _overpay {
-    final o = _totalPaid - _cartTotal;
+    final o = _totalPaid - _settlementTotal;
     return o > 0 ? o : 0;
   }
 
@@ -178,6 +179,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Handle
                 Center(
                   child: Container(
                     margin: const EdgeInsets.only(top: 10, bottom: 8),
@@ -188,6 +190,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                         borderRadius: BorderRadius.circular(2)),
                   ),
                 ),
+                // Title
                 Row(
                   children: [
                     const Text('الدفع',
@@ -200,41 +203,56 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                         icon: const Icon(Icons.close)),
                   ],
                 ),
+                // Customer
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                       color: _C.surfaceGray,
-                      borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(12)),
                   child: Row(
                     children: [
                       const Icon(Icons.person,
-                          color: _C.primary, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.cart.customer?.name ?? 'عميل نقدي',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14),
+                          color: _C.primary, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.cart.customer?.name ?? 'عميل نقدي',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15),
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('الإجمالي المطلوب:',
-                        style: TextStyle(fontSize: 14)),
-                    Text(
-                        '${_settlementTotal.toStringAsFixed(2)} ج.م',
-                        style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: _C.primary)),
-                  ],
+                // Settlement Totals (Previous Balance + Invoice + Total Required)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                      color: _C.surfaceGray,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    children: [
+                      if (widget.cart.hasCustomer && _customerBalance != 0) ...[
+                        _row('الرصيد السابق',
+                            '${_customerBalance.toStringAsFixed(2)} ج.م',
+                            color: _customerBalance > 0
+                                ? _C.danger
+                                : _C.success),
+                        const SizedBox(height: 6),
+                      ],
+                      _row('قيمة الفاتورة',
+                          '${_cartTotal.toStringAsFixed(2)} ج.م'),
+                      const Divider(height: 16),
+                      _row('الإجمالي المطلوب',
+                          '${_settlementTotal.toStringAsFixed(2)} ج.م',
+                          emphasized: true, color: _C.primary),
+                    ],
+                  ),
                 ),
-                const Divider(),
+                const SizedBox(height: 16),
+                // Pay / Credit toggle
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(
@@ -250,62 +268,86 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                   onSelectionChanged: (s) =>
                       setState(() => _isCredit = s.first),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+
                 if (!_isCredit) ...[
+                  // Payment methods section title
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Text('طرق الدفع',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(height: 8),
+                  // Payment methods rows
                   for (int i = 0; i < _payments.length; i++) ...[
                     _paymentRow(i),
                     const SizedBox(height: 8),
                   ],
+                  // Add payment method
                   TextButton.icon(
                     onPressed: _addPayment,
                     icon: const Icon(Icons.add, size: 16),
                     label: const Text('إضافة طريقة دفع'),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  // Status banner (green if settled, red if remaining)
                   _remainingBanner(),
-                ] else
+                ] else ...[
+                  // Credit info banner
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                         color: _C.warningLight,
-                        borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(12)),
                     child: const Row(
                       children: [
                         Icon(Icons.info_outline,
-                            size: 18, color: _C.warning),
-                        SizedBox(width: 8),
+                            size: 20, color: _C.warning),
+                        SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'سيتم إضافة كامل قيمة الفاتورة إلى رصيد العميل.',
                             style: TextStyle(
-                                fontSize: 12, color: _C.warning),
+                                fontSize: 13,
+                                color: _C.warning,
+                                fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
                     ),
                   ),
+                ],
+
                 const SizedBox(height: 20),
+                // Big green submit button
                 SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
+                  height: 56,
+                  child: ElevatedButton.icon(
                     onPressed: _saving ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _C.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: _saving
+                    icon: _saving
                         ? const SizedBox(
-                            width: 22,
-                            height: 22,
+                            width: 20,
+                            height: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2.4,
                                 color: Colors.white))
-                        : const Text('إتمام البيع',
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800)),
+                        : const Icon(Icons.check_circle_outline),
+                    label: Text(
+                      _saving ? 'جاري الحفظ...' : 'إتمام البيع',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _C.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: _C.border,
+                      disabledForegroundColor: _C.textSecondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28)),
+                    ),
                   ),
                 ),
               ],
@@ -316,25 +358,59 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     );
   }
 
+  Widget _row(String label, String value,
+      {bool emphasized = false, Color? color}) {
+    final fontSize = emphasized ? 20.0 : 14.0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: fontSize - 2,
+                fontWeight:
+                    emphasized ? FontWeight.w800 : FontWeight.w600,
+                color: color ?? _C.text)),
+        Text(value,
+            style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
+                color: color ?? _C.text)),
+      ],
+    );
+  }
+
   Widget _paymentRow(int i) {
     final p = _payments[i];
     return Row(
       children: [
-        DropdownButton<String>(
-          value: p.method,
-          underline: const SizedBox.shrink(),
-          items: PaymentEntry.methods.map((m) {
-            return DropdownMenuItem(
-              value: m,
-              child: Text(PaymentEntry.label(m),
-                  style: const TextStyle(fontSize: 13)),
-            );
-          }).toList(),
-          onChanged: (v) {
-            if (v != null) setState(() => p.method = v);
-          },
+        // Method dropdown
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: _C.primaryLight,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: DropdownButton<String>(
+            value: p.method,
+            underline: const SizedBox.shrink(),
+            icon: const Icon(Icons.arrow_drop_down, color: _C.primaryDark),
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: _C.primaryDark),
+            items: PaymentEntry.methods.map((m) {
+              return DropdownMenuItem(
+                value: m,
+                child: Text(PaymentEntry.label(m)),
+              );
+            }).toList(),
+            onChanged: (v) {
+              if (v != null) setState(() => p.method = v);
+            },
+          ),
         ),
         const SizedBox(width: 8),
+        // Amount input
         Expanded(
           child: TextField(
             controller: p.controller,
@@ -344,13 +420,17 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],
             style: const TextStyle(
-                fontSize: 15, fontWeight: FontWeight.w800),
+                fontSize: 16, fontWeight: FontWeight.w800),
             decoration: const InputDecoration(
               isDense: true,
               suffixText: 'ج.م',
-              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: _C.surfaceGray,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(10)),
+              ),
               contentPadding: EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 12),
+                  horizontal: 12, vertical: 14),
             ),
             onChanged: (v) {
               setState(
@@ -358,46 +438,45 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
             },
           ),
         ),
-        if (_payments.length > 1)
+        if (_payments.length > 1) ...[
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.close,
-                color: _C.danger, size: 18),
+            icon: const Icon(Icons.close, color: _C.danger, size: 20),
             onPressed: () => _removePayment(i),
           ),
+        ],
       ],
     );
   }
 
   Widget _remainingBanner() {
     final Color color;
+    final IconData icon;
     final String label;
     if (_remaining > 0.001) {
       color = _C.danger;
+      icon = Icons.pending_outlined;
       label = 'المتبقي: ${_remaining.toStringAsFixed(2)} ج.م';
     } else if (_overpay > 0.001) {
       color = _C.success;
-      label =
-          'زيادة: ${_overpay.toStringAsFixed(2)} ج.م (تُضاف للرصيد)';
+      icon = Icons.trending_up;
+      label = 'زيادة: ${_overpay.toStringAsFixed(2)} ج.م (تُضاف للرصيد)';
     } else {
       color = _C.success;
+      icon = Icons.check_circle;
       label = 'المدفوع مطابق للمطلوب';
     }
     return Container(
       padding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          Icon(
-              _remaining > 0.001
-                  ? Icons.pending_outlined
-                  : Icons.check_circle,
-              size: 18,
-              color: color),
+          Icon(icon, size: 20, color: color),
           const SizedBox(width: 8),
           Expanded(
             child: Text(label,
@@ -408,7 +487,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           ),
           Text('${_totalPaid.toStringAsFixed(2)} ج.م',
               style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w900,
                   color: color)),
         ],
@@ -419,10 +498,14 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
 
 class _C {
   static const primary = Color(0xFF00897B);
+  static const primaryDark = Color(0xFF00695C);
+  static const primaryLight = Color(0xFFE0F2F1);
   static const success = Color(0xFF2E7D32);
   static const warning = Color(0xFFE65100);
   static const warningLight = Color(0xFFFFF3E0);
   static const danger = Color(0xFFC62828);
   static const surfaceGray = Color(0xFFF5F5F5);
   static const border = Color(0xFFE0E0E0);
+  static const text = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF757575);
 }

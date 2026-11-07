@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../domain/customer_models.dart';
 
 class CustomersRepository {
@@ -40,6 +39,21 @@ class CustomersRepository {
     return (res as List)
         .map((e) => StatementEntry.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<String> createCustomer({
+    required String companyId,
+    required String name,
+    String? phone,
+    String? address,
+  }) async {
+    final res = await _sb.rpc('create_rep_customer', params: {
+      'p_company_id': companyId,
+      'p_name': name,
+      'p_phone': phone,
+      'p_address': address,
+    });
+    return res as String;
   }
 
   String _dateStr(DateTime d) =>

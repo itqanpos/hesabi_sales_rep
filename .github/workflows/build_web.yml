@@ -59,12 +59,11 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # ⬇️ تحسينات الأداء — HTML renderer + tree-shake-icons
+      # ⬇️ بدون --web-renderer (أُزيل من Flutter 3.29+)
       - name: Build Web
         run: |
           flutter build web --release \
             --base-href=/hesabi_sales_rep/ \
-            --web-renderer html \
             --tree-shake-icons \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}

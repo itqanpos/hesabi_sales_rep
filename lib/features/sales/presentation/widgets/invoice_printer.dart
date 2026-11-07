@@ -21,6 +21,7 @@ class InvoicePrinter {
     required InvoiceSettings settings,
     String? repName,
   }) async {
+    // Android → thermal via bluetooth (uses settings for paper width)
     if (!kIsWeb && Platform.isAndroid) {
       return DirectInvoicePrinter.print(
         context: context,
@@ -28,8 +29,11 @@ class InvoicePrinter {
         companyName: companyName,
         branchName: branchName,
         companyPhone: companyPhone,
+        settings: settings,
+        repName: repName,
       );
     }
+    // Web / iOS → PDF
     return _printViaPdf(
       context: context,
       sale: sale,

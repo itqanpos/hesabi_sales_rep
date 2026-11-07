@@ -16,11 +16,13 @@ import '../widgets/pos_unit_selector_sheet.dart';
 class PosPage extends StatefulWidget {
   final String companyId;
   final String branchId;
+  final String? branchName;
 
   const PosPage({
     super.key,
     required this.companyId,
     required this.branchId,
+    this.branchName,
   });
 
   @override
@@ -107,30 +109,19 @@ class _PosPageState extends State<PosPage> {
       minPrice: unit.effectiveMin(product.minPrice),
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
-    if (merged) {
-      _snack('تمت زيادة الكمية في السلة');
-    }
+    if (merged) _snack('تمت زيادة الكمية في السلة');
   }
 
-  void _onQuantityChanged(int index, double newQty) {
-    _cart.updateQuantity(index, newQty);
-  }
-
-  void _onRemoveLine(int index) {
-    _cart.removeLine(index);
-  }
-
-  void _onDiscountChanged(double discount) {
-    _cart.setDiscount(discount);
-  }
+  void _onQuantityChanged(int i, double q) => _cart.updateQuantity(i, q);
+  void _onRemoveLine(int i) => _cart.removeLine(i);
+  void _onDiscountChanged(double d) => _cart.setDiscount(d);
 
   void _onClearCart() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('إلغاء الفاتورة'),
-        content:
-            const Text('هل تريد حذف جميع الأصناف من السلة؟'),
+        content: const Text('هل تريد حذف جميع الأصناف من السلة؟'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -193,9 +184,7 @@ class _PosPageState extends State<PosPage> {
       heldCart: _heldCart,
       onHold: _holdCart,
       onRestore: _restoreCart,
-      onReturns: () {
-        _snack('قريباً: شاشة المرتجعات');
-      },
+      onReturns: () => _snack('قريباً: المرتجعات'),
     );
   }
 
@@ -253,11 +242,30 @@ class _PosPageState extends State<PosPage> {
     return Scaffold(
       backgroundColor: _C.bg,
       appBar: AppBar(
-        backgroundColor: _C.surface,
-        title: const Text('نقطة البيع',
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: _C.text, fontSize: 17)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: _C.text),
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'نقطة البيع',
+              style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: _C.text),
+            ),
+            if (widget.branchName != null && widget.branchName!.isNotEmpty)
+              Text(
+                widget.branchName!,
+                style: const TextStyle(
+                    fontSize: 11, color: _C.textSecondary),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.more_vert),
@@ -299,8 +307,10 @@ class _PosPageState extends State<PosPage> {
                           onProductTap: _addProduct,
                         ),
                       ),
-                      Container(
-                          height: 1, color: _C.border),
+                      const Divider(
+                          height: 8,
+                          thickness: 4,
+                          color: Color(0xFFEEEEEE)),
                       const _SectionLabel(label: 'السلة'),
                       Flexible(
                         flex: 3,
@@ -337,15 +347,18 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = accent ? _C.primary : _C.textSecondary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
         children: [
+          Container(width: 20, height: 2, color: color),
+          const SizedBox(width: 6),
           Text(label,
               style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: accent ? _C.primary : _C.textSecondary)),
+                  color: color)),
         ],
       ),
     );
@@ -464,7 +477,6 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
   }
 }
 
-/// ماسح مبسط (بديل مؤقت لصفحة الباركود)
 class _SimpleScannerPage extends StatelessWidget {
   const _SimpleScannerPage();
 
@@ -496,12 +508,6 @@ class _SimpleScannerPage extends StatelessWidget {
                 child: const Text('تأكيد'),
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              '💡 لاحقاً: كاميرا المسح عبر mobile_scanner',
-              style: TextStyle(fontSize: 11, color: _C.textSecondary),
-              textAlign: TextAlign.center,
-            ),
           ],
         ),
       ),
@@ -513,7 +519,6 @@ class _C {
   static const primary = Color(0xFF00897B);
   static const success = Color(0xFF2E7D32);
   static const danger = Color(0xFFC62828);
-  static const surface = Colors.white;
   static const border = Color(0xFFE0E0E0);
   static const text = Color(0xFF1A1A1A);
   static const textSecondary = Color(0xFF757575);

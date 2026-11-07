@@ -1,11 +1,23 @@
 import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/customers_repository.dart';
 import '../../domain/customer_models.dart';
+import '../widgets/add_customer_sheet.dart';
+
+class _C {
+  static const primary = Color(0xFF00897B);
+  static const primaryDark = Color(0xFF00695C);
+  static const primaryLight = Color(0xFFE0F2F1);
+  static const success = Color(0xFF2E7D32);
+  static const danger = Color(0xFFC62828);
+  static const surfaceGray = Color(0xFFF5F5F5);
+  static const border = Color(0xFFE0E0E0);
+  static const textSecondary = Color(0xFF757575);
+  static const bg = Color(0xFFFAFAFA);
+}
 
 class CustomersPage extends StatefulWidget {
   final String companyId;
@@ -70,6 +82,19 @@ class _CustomersPageState extends State<CustomersPage> {
     });
   }
 
+  Future<void> _openAddCustomer() async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddCustomerSheet(
+        companyId: widget.companyId,
+        repo: _repo,
+      ),
+    );
+    if (saved == true) _load();
+  }
+
   void _openStatement(CustomerSummary c) {
     context.push('/customer-statement', extra: {
       'companyId': widget.companyId,
@@ -89,16 +114,17 @@ class _CustomersPageState extends State<CustomersPage> {
       textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         backgroundColor: _C.bg,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _openAddCustomer,
+          backgroundColor: _C.primary,
+          icon: const Icon(Icons.person_add, color: Colors.white),
+          label: const Text('عميل جديد',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ),
         body: Column(
           children: [
-            _Header(
-              count: _all.length,
-              totalDebt: _totalDebt,
-            ),
-            _SearchBox(
-              controller: _searchCtrl,
-              onChanged: _onSearch,
-            ),
+            _Header(count: _all.length, totalDebt: _totalDebt),
+            _SearchBox(controller: _searchCtrl, onChanged: _onSearch),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -123,8 +149,7 @@ class _CustomersPageState extends State<CustomersPage> {
               const SizedBox(height: 12),
               Text(_error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: _C.textSecondary, fontSize: 13)),
+                  style: const TextStyle(color: _C.textSecondary, fontSize: 13)),
               const SizedBox(height: 12),
               ElevatedButton(
                   onPressed: _load, child: const Text('إعادة المحاولة')),
@@ -144,11 +169,9 @@ class _CustomersPageState extends State<CustomersPage> {
                   size: 56, color: _C.textSecondary),
               const SizedBox(height: 12),
               Text(
-                _all.isEmpty
-                    ? 'لا يوجد عملاء'
-                    : 'لا توجد نتائج مطابقة',
-                style: const TextStyle(
-                    color: _C.textSecondary, fontSize: 15),
+                _all.isEmpty ? 'لا يوجد عملاء' : 'لا توجد نتائج مطابقة',
+                style:
+                    const TextStyle(color: _C.textSecondary, fontSize: 15),
               ),
             ],
           ),
@@ -159,7 +182,7 @@ class _CustomersPageState extends State<CustomersPage> {
       color: _C.primary,
       onRefresh: _load,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), // Space for FAB
         itemCount: _filtered.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (_, i) => _CustomerTile(
@@ -172,7 +195,6 @@ class _CustomersPageState extends State<CustomersPage> {
 }
 
 // ─── Header ─────────────────────────────────────────────────────────────────
-
 class _Header extends StatelessWidget {
   final int count;
   final double totalDebt;
@@ -212,8 +234,7 @@ class _Header extends StatelessWidget {
             children: [
               _StatChip(label: 'عدد العملاء', value: '$count'),
               const SizedBox(width: 10),
-              _StatChip(
-                  label: 'إجمالي المديونية', value: fmtMoney(totalDebt)),
+              _StatChip(label: 'إجمالي المديونية', value: fmtMoney(totalDebt)),
             ],
           ),
         ],
@@ -239,8 +260,7 @@ class _StatChip extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style:
-                  const TextStyle(color: Colors.white70, fontSize: 11)),
+              style: const TextStyle(color: Colors.white70, fontSize: 11)),
           const SizedBox(height: 2),
           Text(value,
               style: const TextStyle(
@@ -254,7 +274,6 @@ class _StatChip extends StatelessWidget {
 }
 
 // ─── Search ─────────────────────────────────────────────────────────────────
-
 class _SearchBox extends StatelessWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
@@ -286,7 +305,6 @@ class _SearchBox extends StatelessWidget {
 }
 
 // ─── Tile ───────────────────────────────────────────────────────────────────
-
 class _CustomerTile extends StatelessWidget {
   final CustomerSummary customer;
   final VoidCallback onTap;
@@ -322,9 +340,7 @@ class _CustomerTile extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  customer.name.isNotEmpty
-                      ? customer.name.substring(0, 1)
-                      : '؟',
+                  customer.name.isNotEmpty ? customer.name.substring(0, 1) : '؟',
                   style: const TextStyle(
                       color: _C.primaryDark,
                       fontSize: 18,
@@ -386,16 +402,10 @@ class _CustomerTile extends StatelessWidget {
   }
 }
 
-// ─── Colors ─────────────────────────────────────────────────────────────────
-
-class _C {
-  static const primary = Color(0xFF00897B);
-  static const primaryDark = Color(0xFF00695C);
-  static const primaryLight = Color(0xFFE0F2F1);
-  static const success = Color(0xFF2E7D32);
-  static const danger = Color(0xFFC62828);
-  static const surfaceGray = Color(0xFFF5F5F5);
-  static const border = Color(0xFFE0E0E0);
-  static const textSecondary = Color(0xFF757575);
-  static const bg = Color(0xFFFAFAFA);
+String fmtMoney(double v) {
+  final f = NumberFormat('#,##0.00', 'en');
+  return '${f.format(v)} ج.م';
 }
+
+String fmtDate(DateTime d) => DateFormat('yyyy/MM/dd', 'en').format(d);
+String fmtDateTime(DateTime d) => DateFormat('yyyy/MM/dd HH:mm', 'en').format(d);

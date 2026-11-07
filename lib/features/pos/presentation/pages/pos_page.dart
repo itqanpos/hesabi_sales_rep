@@ -1,33 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../domain/pos_models.dart';
 import '../../data/pos_repository.dart';
+import '../../domain/pos_models.dart';
+import '../dialogs/pos_unit_selector_sheet.dart';
+import '../dialogs/pos_payment_sheet.dart'; // سنفترض وجوده أو إنشائه
+import '../widgets/pos_scanner_page.dart'; // سنفترض وجوده
 
 class _C {
-  static const primary       = Color(0xFF00897B);
-  static const primaryDark   = Color(0xFF00695C);
-  static const primaryLight  = Color(0xFFE0F2F1);
-  static const success       = Color(0xFF2E7D32);
-  static const successLight  = Color(0xFFE8F5E9);
-  static const warning       = Color(0xFFE65100);
-  static const warningLight  = Color(0xFFFFF3E0);
-  static const danger        = Color(0xFFC62828);
-  static const dangerLight   = Color(0xFFFFEBEE);
-  static const surface       = Colors.white;
-  static const surfaceGray   = Color(0xFFF5F5F5);
-  static const border        = Color(0xFFE0E0E0);
-  static const text          = Color(0xFF1A1A1A);
+  static const primary = Color(0xFF00897B);
+  static const primaryDark = Color(0xFF00695C);
+  static const primaryLight = Color(0xFFE0F2F1);
+  static const success = Color(0xFF2E7D32);
+  static const successLight = Color(0xFFE8F5E9);
+  static const warning = Color(0xFFE65100);
+  static const danger = Color(0xFFC62828);
+  static const dangerLight = Color(0xFFFFEBEE);
+  static const surface = Colors.white;
+  static const surfaceGray = Color(0xFFF5F5F5);
+  static const border = Color(0xFFE0E0E0);
+  static const text = Color(0xFF1A1A1A);
   static const textSecondary = Color(0xFF757575);
-  static const bg            = Color(0xFFFAFAFA);
+  static const bg = Color(0xFFFAFAFA);
 }
 
 class PosPage extends StatefulWidget {
   final String companyId;
   final String branchId;
-  const PosPage({super.key, required this.companyId, required this.branchId});
+
+  const PosPage({
+    super.key,
+    required this.companyId,
+    required this.branchId,
+  });
 
   @override
   State<PosPage> createState() => _PosPageState();
@@ -35,1515 +41,482 @@ class PosPage extends StatefulWidget {
 
 class _PosPageState extends State<PosPage> {
   late final PosRepository _repo;
+  final _searchCtrl = TextEditingController();
 
   List<PosProduct> _products = [];
   List<PosCustomer> _customers = [];
-  String _companyName = '';
+  List<PosCartLine> _cart = [];
+  PosCustomer? _selectedCustomer;
 
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
-  PosCustomer? _selectedCustomer;
-  List<PosCartLine> _cart = [];
-  double _discount = 0;
-  String? _focusedLineKey;
 
   @override
   void initState() {
     super.initState();
     _repo = PosRepository(Supabase.instance.client);
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
-    try {
-      final productsF = _repo.loadProducts(widget.companyId, widget.branchId);
-      final customersF = _repo.loadCustomers(widget.companyId);
-      final companyF = Supabase.instance.client
-          .from('companies').select('name').eq('id', widget.companyId).maybeSingle();
-
-      final products = await productsF;
-      final customers = await customersF;
-      final companyRes = await companyF;
-
-      if (!mounted) return;
-      setState(() {
-        _products = products;
-        _customers = customers;
-        _companyName = ((companyRes)?['name'] as String?) ?? 'الشركة';
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
-    }
-  }
-
-  List<PosProduct> get _filteredProducts {
-    if (_searchQuery.isEmpty) return _products;
-    final q = _searchQuery.toLowerCase();
-    return _products.where((p) =>
-      p.name.toLowerCase().contains(q) ||
-      (p.barcode?.contains(q) ?? false) ||
-      (p.sku?.toLowerCase().contains(q) ?? false)
-    ).toList();
-  }
-
-  bool get _isSearching => _searchQuery.isNotEmpty;
-  double get _subtotal => _cart.fold(0, (s, l) => s + l.lineTotal);
-  double get _total => _subtotal - _discount;
-  double get _customerBalance => _selectedCustomer?.balance ?? 0;
-
-  void _addToCart(PosCartLine line) {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      final i = _cart.indexWhere((l) => l.key == line.key);
-      if (i >= 0) {
-        _cart[i] = _cart[i].copyWith(quantity: _cart[i].quantity + line.quantity);
-      } else {
-        _cart.add(line);
-      }
-      _focusedLineKey = line.key;
-      _searchQuery = '';
-    });
-  }
-
-  void _updateQty(int i, double qty) {
-    if (qty <= 0) return;
-    setState(() => _cart[i] = _cart[i].copyWith(quantity: qty));
-  }
-
-  void _updatePrice(int i, double price) {
-    final line = _cart[i];
-    if (price < 0) return;
-    if (line.minPrice != null && price < line.minPrice!) {
-      _snack('السعر أقل من الحد الأدنى (${line.minPrice!.toStringAsFixed(2)})');
-      return;
-    }
-    if (line.maxPrice != null && price > line.maxPrice!) {
-      _snack('السعر أعلى من الحد الأقصى (${line.maxPrice!.toStringAsFixed(2)})');
-      return;
-    }
-    setState(() => _cart[i] = _cart[i].copyWith(unitPrice: price));
-  }
-
-  void _removeLine(int i) => setState(() => _cart.removeAt(i));
-
-  void _snack(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
-
-  Future<void> _openScanner() async {
-    final barcode = await Navigator.push<String>(
-      context, MaterialPageRoute(builder: (_) => const _ScannerPage()),
-    );
-    if (barcode != null && barcode.isNotEmpty) {
-      setState(() => _searchQuery = barcode);
-      if (_filteredProducts.length == 1) _openUnitSelector(_filteredProducts.first);
-    }
-  }
-
-  Future<void> _openCustomerPicker() async {
-    final picked = await showModalBottomSheet<PosCustomer>(
-      context: context, isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _CustomerPickerSheet(customers: _customers),
-    );
-    if (picked != null) setState(() => _selectedCustomer = picked);
-  }
-
-  Future<void> _openUnitSelector(PosProduct product) async {
-    final line = await showModalBottomSheet<PosCartLine>(
-      context: context, isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _UnitSelectorSheet(product: product),
-    );
-    if (line != null) _addToCart(line);
-  }
-
-  Future<void> _openPayment() async {
-    if (_cart.isEmpty) return;
-    final ok = await showModalBottomSheet<bool>(
-      context: context, isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _PaymentSheet(
-        repository: _repo,
-        companyId: widget.companyId,
-        companyName: _companyName,
-        cart: _cart,
-        customer: _selectedCustomer,
-        discount: _discount,
-        total: _total,
-        customerBalance: _customerBalance,
-      ),
-    );
-    if (ok == true) {
-      setState(() { _cart.clear(); _discount = 0; _selectedCustomer = null; _searchQuery = ''; });
-      _load();
-    }
-  }
-
-  Future<void> _confirmCancel() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('إلغاء الفاتورة'),
-        content: const Text('هل تريد مسح جميع المنتجات من السلة؟'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('تراجع')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: _C.danger),
-            child: const Text('نعم، إلغاء'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      setState(() { _cart.clear(); _discount = 0; _selectedCustomer = null; });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _C.bg,
-      appBar: AppBar(
-        backgroundColor: _C.surface,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title: const Text('نقطة البيع',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: _C.text)),
-        iconTheme: const IconThemeData(color: _C.text),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _C.border),
-        ),
-      ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator(color: _C.primary));
-    if (_error != null) {
-      return Center(child: Padding(padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.error, color: _C.danger, size: 48),
-          const SizedBox(height: 12),
-          Text(_error!, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          ElevatedButton(onPressed: _load, child: const Text('إعادة المحاولة')),
-        ]),
-      ));
-    }
-
-    return Column(children: [
-      _CustomerBar(
-        customer: _selectedCustomer,
-        onTap: _openCustomerPicker,
-        onClear: () => setState(() => _selectedCustomer = null),
-      ),
-      _SearchField(
-        value: _searchQuery,
-        onChanged: (v) => setState(() => _searchQuery = v),
-        onScan: _openScanner,
-      ),
-      Expanded(child: _isSearching ? _buildSplitView() : _buildCart()),
-      if (!_isSearching)
-        _BottomPanel(
-          itemCount: _cart.length,
-          discount: _discount,
-          total: _total,
-          onDiscountChanged: (v) => setState(() => _discount = v),
-          onPay: _cart.isNotEmpty ? _openPayment : null,
-          onCancel: _cart.isNotEmpty ? _confirmCancel : null,
-        ),
-    ]);
-  }
-
-  Widget _buildSplitView() {
-    return Column(children: [
-      const _SectionLabel(icon: Icons.search, label: 'نتائج البحث'),
-      Flexible(
-        flex: 2,
-        child: _ResultsList(products: _filteredProducts, onTap: _openUnitSelector),
-      ),
-      const Divider(height: 1, color: _C.border),
-      const _SectionLabel(icon: Icons.shopping_cart_outlined, label: 'السلة'),
-      Flexible(flex: 3, child: _buildCart()),
-    ]);
-  }
-
-  Widget _buildCart() {
-    if (_cart.isEmpty) {
-      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey.shade400),
-        const SizedBox(height: 12),
-        Text('السلة فارغة',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
-        const SizedBox(height: 4),
-        Text('ابحث عن منتج أو امسح الباركود لإضافته.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-      ]));
-    }
-    return ListView.separated(
-      itemCount: _cart.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: _C.border),
-      itemBuilder: (_, i) {
-        final line = _cart[i];
-        return _CartLineTile(
-          key: ValueKey(line.key),
-          line: line,
-          shouldFocus: _focusedLineKey == line.key,
-          onFocusReceived: () {
-            if (_focusedLineKey == line.key) setState(() => _focusedLineKey = null);
-          },
-          onQtyChanged: (q) => _updateQty(i, q),
-          onPriceChanged: (p) => _updatePrice(i, p),
-          onRemove: () => _removeLine(i),
-        );
-      },
-    );
-  }
-}
-
-// ============================================================
-// Widgets
-// ============================================================
-
-class _CustomerBar extends StatelessWidget {
-  final PosCustomer? customer;
-  final VoidCallback onTap;
-  final VoidCallback onClear;
-  const _CustomerBar({this.customer, required this.onTap, required this.onClear});
-
-  @override
-  Widget build(BuildContext context) {
-    final has = customer != null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Material(
-        color: _C.surfaceGray,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12), onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(children: [
-              Icon(has ? Icons.person : Icons.person_outline, color: _C.primary, size: 22),
-              const SizedBox(width: 10),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(has ? customer!.name : 'عميل نقدي',
-                      style: const TextStyle(fontWeight: FontWeight.w700,
-                          fontSize: 14, color: _C.text)),
-                  if (has && customer!.hasDebt)
-                    Text('الرصيد: ${customer!.balance.toStringAsFixed(2)} ج.م',
-                        style: const TextStyle(color: _C.danger,
-                            fontWeight: FontWeight.bold, fontSize: 12)),
-                ],
-              )),
-              if (has)
-                IconButton(icon: const Icon(Icons.close, size: 20), onPressed: onClear)
-              else
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('تغيير', style: TextStyle(
-                      color: _C.primary, fontWeight: FontWeight.bold, fontSize: 13)),
-                  const Icon(Icons.chevron_left, color: _C.primary, size: 20),
-                ]),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SearchField extends StatefulWidget {
-  final String value;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onScan;
-  const _SearchField({required this.value, required this.onChanged, required this.onScan});
-
-  @override
-  State<_SearchField> createState() => _SearchFieldState();
-}
-
-class _SearchFieldState extends State<_SearchField> {
-  late final TextEditingController _ctrl;
-  late final FocusNode _focus;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.value);
-    _focus = FocusNode();
-  }
-
-  @override
-  void didUpdateWidget(covariant _SearchField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value && _ctrl.text != widget.value) {
-      _ctrl.text = widget.value;
-    }
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); _focus.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      child: TextField(
-        controller: _ctrl,
-        focusNode: _focus,
-        onChanged: widget.onChanged,
-        textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 14, color: _C.text),
-        decoration: InputDecoration(
-          hintText: 'ابحث بالاسم أو الكود أو امسح الباركود',
-          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-          filled: true,
-          fillColor: _C.surface,
-          prefixIcon: const Icon(Icons.search, color: _C.textSecondary),
-          suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner, color: _C.textSecondary),
-              onPressed: widget.onScan,
-            ),
-            if (_ctrl.text.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.close, color: _C.textSecondary),
-                onPressed: () { _ctrl.clear(); widget.onChanged(''); },
-              ),
-          ]),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _C.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _C.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _C.primary, width: 1.5),
-          ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _SectionLabel({required this.icon, required this.label});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-      child: Row(children: [
-        Icon(icon, size: 15, color: _C.primary),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 12,
-            fontWeight: FontWeight.bold, color: _C.primary)),
-        const SizedBox(width: 8),
-        Expanded(child: Container(height: 1, color: _C.primary.withOpacity(0.15))),
-      ]),
-    );
-  }
-}
-
-class _ResultsList extends StatelessWidget {
-  final List<PosProduct> products;
-  final ValueChanged<PosProduct> onTap;
-  const _ResultsList({required this.products, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    if (products.isEmpty) {
-      return Center(child: Text('لا توجد منتجات مطابقة',
-          style: TextStyle(color: Colors.grey.shade500)));
-    }
-    return ListView.separated(
-      itemCount: products.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: _C.border),
-      itemBuilder: (_, i) {
-        final p = products[i];
-        final (bg, fg, label) = p.stockQty <= 0
-            ? (_C.dangerLight, _C.danger, 'نفد')
-            : p.stockQty <= 10
-                ? (_C.warningLight, _C.warning, '${p.stockQty.toInt()} متبقٍ')
-                : (_C.successLight, _C.success, '${p.stockQty.toInt()} متاح');
-        return InkWell(
-          onTap: () => onTap(p),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(children: [
-              Container(
-                width: 38, height: 38,
-                decoration: BoxDecoration(
-                  color: _C.primaryLight,
-                  borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.inventory_2_outlined,
-                    size: 20, color: _C.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(p.name, style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 14, color: _C.text),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(p.defaultUnitName,
-                      style: const TextStyle(fontSize: 11, color: _C.textSecondary)),
-                ],
-              )),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: fg.withOpacity(0.3)),
-                ),
-                child: Text(label, style: TextStyle(fontSize: 10.5,
-                    color: fg, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 10),
-              Text('${p.defaultPrice.toStringAsFixed(2)} ج.م',
-                  style: const TextStyle(fontWeight: FontWeight.bold,
-                      color: _C.primary, fontSize: 14)),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_left, size: 18, color: _C.textSecondary),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CartLineTile extends StatefulWidget {
-  final PosCartLine line;
-  final bool shouldFocus;
-  final VoidCallback? onFocusReceived;
-  final ValueChanged<double> onQtyChanged;
-  final ValueChanged<double> onPriceChanged;
-  final VoidCallback onRemove;
-
-  const _CartLineTile({
-    Key? key,
-    required this.line,
-    required this.shouldFocus,
-    this.onFocusReceived,
-    required this.onQtyChanged,
-    required this.onPriceChanged,
-    required this.onRemove,
-  }) : super(key: key);
-
-  @override
-  State<_CartLineTile> createState() => _CartLineTileState();
-}
-
-class _CartLineTileState extends State<_CartLineTile> {
-  late final TextEditingController _qtyCtrl;
-  late final TextEditingController _priceCtrl;
-  final _qtyFocus = FocusNode();
-  final _priceFocus = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _qtyCtrl = TextEditingController(text: _fmt(widget.line.quantity));
-    _priceCtrl = TextEditingController(text: _fmt(widget.line.unitPrice));
-    if (widget.shouldFocus) _requestQtyFocus();
-  }
-
-  @override
-  void didUpdateWidget(covariant _CartLineTile old) {
-    super.didUpdateWidget(old);
-    if (old.line.quantity != widget.line.quantity && !_qtyFocus.hasFocus) {
-      _qtyCtrl.text = _fmt(widget.line.quantity);
-    }
-    if (old.line.unitPrice != widget.line.unitPrice && !_priceFocus.hasFocus) {
-      _priceCtrl.text = _fmt(widget.line.unitPrice);
-    }
-    if (widget.shouldFocus && !old.shouldFocus) _requestQtyFocus();
-  }
-
-  void _requestQtyFocus() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _qtyFocus.requestFocus();
-      _qtyCtrl.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _qtyCtrl.text.length,
-      );
-      try { SystemChannels.textInput.invokeMethod<void>('TextInput.show').ignore(); } catch (_) {}
-      widget.onFocusReceived?.call();
-    });
+    _loadData();
   }
 
   @override
   void dispose() {
-    _qtyCtrl.dispose(); _priceCtrl.dispose();
-    _qtyFocus.dispose(); _priceFocus.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  String _fmt(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
-
-  void _commitQty() {
-    final v = double.tryParse(_qtyCtrl.text);
-    if (v != null && v > 0) { widget.onQtyChanged(v); }
-    else { _qtyCtrl.text = _fmt(widget.line.quantity); }
+  Future<void> _loadData() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([
+        _repo.loadProducts(companyId: widget.companyId, branchId: widget.branchId),
+        _repo.loadCustomers(companyId: widget.companyId),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _products = results[0] as List<PosProduct>;
+        _customers = results[1] as List<PosCustomer>;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
-  void _commitPrice() {
-    final v = double.tryParse(_priceCtrl.text);
-    if (v != null) { widget.onPriceChanged(v); }
-    else { _priceCtrl.text = _fmt(widget.line.unitPrice); }
+  // ─── Cart Logic ───
+  double get _grandTotal => _cart.fold(0.0, (s, line) => s + line.lineTotal);
+  int get _totalItems => _cart.fold(0, (s, line) => s + line.quantity.toInt());
+
+  void _addToCart(PosProduct product) async {
+    final unit = await showModalBottomSheet<PosProductUnit>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PosUnitSelectorSheet(product: product),
+    );
+    if (unit == null) return;
+
+    setState(() {
+      final existingIndex = _cart.indexWhere(
+        (l) => l.product.id == product.id && l.unit.id == unit.id,
+      );
+      if (existingIndex >= 0) {
+        _cart[existingIndex].quantity += 1;
+      } else {
+        _cart.add(PosCartLine(
+          product: product,
+          unit: unit,
+          quantity: 1,
+          unitPrice: unit.effectivePrice,
+        ));
+      }
+    });
   }
 
+  void _removeFromCart(int index) {
+    setState(() {
+      if (_cart[index].quantity > 1) {
+        _cart[index].quantity -= 1;
+      } else {
+        _cart.removeAt(index);
+      }
+    });
+  }
+
+  // ─── UI ───
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      color: _C.surface,
-      child: Row(children: [
-        Expanded(
-          flex: 4,
-          child: Text(widget.line.productName,
-              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _C.text),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-        const SizedBox(width: 6),
-        SizedBox(width: 54, height: 36, child: TextField(
-          controller: _qtyCtrl, focusNode: _qtyFocus, textAlign: TextAlign.center,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          decoration: InputDecoration(
-            isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: _qtyFocus.hasFocus ? _C.primary : _C.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: _C.primary, width: 1.8)),
-          ),
-          onSubmitted: (_) => _commitQty(),
-          onTapOutside: (_) { FocusScope.of(context).unfocus(); _commitQty(); },
-        )),
-        const SizedBox(width: 4),
-        SizedBox(width: 44, child: Text(widget.line.unitName,
-            style: const TextStyle(fontSize: 11, color: _C.textSecondary),
-            textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 4),
-        SizedBox(width: 64, height: 36, child: TextField(
-          controller: _priceCtrl, focusNode: _priceFocus, textAlign: TextAlign.center,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          decoration: InputDecoration(
-            isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: _C.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: _C.primary, width: 1.8)),
-          ),
-          onSubmitted: (_) => _commitPrice(),
-          onTapOutside: (_) { FocusScope.of(context).unfocus(); _commitPrice(); },
-        )),
-        const SizedBox(width: 6),
-        SizedBox(width: 70, child: Text('${widget.line.lineTotal.toStringAsFixed(2)} ج.م',
-            textAlign: TextAlign.end,
-            style: const TextStyle(fontWeight: FontWeight.bold,
-                color: _C.primary, fontSize: 12.5),
-            maxLines: 1, overflow: TextOverflow.ellipsis)),
+    return Scaffold(
+      backgroundColor: _C.bg,
+      appBar: _buildAppBar(),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _C.primary))
+          : _error != null
+              ? _buildError()
+              : _buildBody(),
+      bottomNavigationBar: _cart.isEmpty ? null : _buildCartSummaryBar(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: _C.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      iconTheme: const IconThemeData(color: _C.text),
+      title: const Text('نقطة البيع',
+          style: TextStyle(fontWeight: FontWeight.bold, color: _C.text, fontSize: 18)),
+      actions: [
         IconButton(
-          icon: const Icon(Icons.close, size: 18, color: _C.textSecondary),
-          padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-          onPressed: widget.onRemove,
+          onPressed: () async {
+            final barcode = await Navigator.push<String>(
+              context,
+              MaterialPageRoute(builder: (_) => const PosScannerPage()),
+            );
+            if (barcode != null) {
+              _searchCtrl.text = barcode;
+              setState(() => _searchQuery = barcode);
+            }
+          },
+          icon: const Icon(Icons.qr_code_scanner, color: _C.primary),
+          tooltip: 'مسح باركود',
         ),
-      ]),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(60),
+        child: Container(
+          color: _C.surface,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: InputDecoration(
+              hintText: 'ابحث بالاسم أو الباركود...',
+              prefixIcon: const Icon(Icons.search, color: _C.textSecondary),
+              filled: true,
+              fillColor: _C.surfaceGray,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (v) => setState(() => _searchQuery = v),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    final filteredProducts = _products.where((p) {
+      final q = _searchQuery.toLowerCase();
+      return p.name.toLowerCase().contains(q) ||
+          (p.barcode ?? '').contains(q) ||
+          (p.sku ?? '').toLowerCase().contains(q);
+    }).toList();
+
+    if (filteredProducts.isEmpty && _searchQuery.isNotEmpty) {
+      return const Center(child: Text('لا توجد نتائج مطابقة', style: TextStyle(color: _C.textSecondary)));
+    }
+
+    return Column(
+      children: [
+        _buildCustomerBar(),
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(12),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 1.4,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: filteredProducts.length,
+            itemBuilder: (_, i) => _ProductCard(
+              product: filteredProducts[i],
+              onTap: () => _addToCart(filteredProducts[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomerBar() {
+    return InkWell(
+      onTap: _showCustomerPicker,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _selectedCustomer != null ? _C.primaryLight : Colors.white,
+          border: const Border(bottom: BorderSide(color: _C.border)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.person,
+              color: _selectedCustomer != null ? _C.primaryDark : _C.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _selectedCustomer?.name ?? 'تحديد عميل (اختياري)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: _selectedCustomer != null ? FontWeight.bold : FontWeight.normal,
+                  color: _selectedCustomer != null ? _C.primaryDark : _C.textSecondary,
+                ),
+              ),
+            ),
+            if (_selectedCustomer != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: _C.primaryDark),
+                onPressed: () => setState(() => _selectedCustomer = null),
+              )
+            else
+              const Icon(Icons.chevron_left, color: _C.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartSummaryBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: _C.surface,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, -4)),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            // زر عرض السلة
+            InkWell(
+              onTap: _showCartSheet,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _C.primaryLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _C.primary.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text('$_totalItems', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _C.primaryDark)),
+                    const Text('عناصر', style: TextStyle(fontSize: 10, color: _C.primaryDark)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // زر الدفع
+            Expanded(
+              child: SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _showPaymentSheet,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _C.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('الدفع', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text('${_grandTotal.toStringAsFixed(2)} ج.م', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Sheets ───
+  void _showCustomerPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('اختيار عميل', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _customers.length,
+                itemBuilder: (_, i) => ListTile(
+                  title: Text(_customers[i].name),
+                  subtitle: Text(_customers[i].phone ?? ''),
+                  onTap: () {
+                    setState(() => _selectedCustomer = _customers[i]);
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCartSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.7,
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('سلة المشتريات', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: _cart.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final line = _cart[i];
+                      return ListTile(
+                        title: Text(line.product.name),
+                        subtitle: Text('${line.unitPrice.toStringAsFixed(2)} × ${line.unit.name}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: _C.danger),
+                              onPressed: () {
+                                _removeFromCart(i);
+                                setModalState(() {});
+                              },
+                            ),
+                            Text('${line.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline, color: _C.primary),
+                              onPressed: () {
+                                setState(() => line.quantity += 1);
+                                setModalState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showPaymentSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PosPaymentSheet(
+        cart: _cart,
+        customer: _selectedCustomer,
+        companyId: widget.companyId,
+        branchId: widget.branchId,
+        repo: _repo,
+        onSuccess: () {
+          setState(() {
+            _cart.clear();
+            _selectedCustomer = null;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: _C.danger, size: 48),
+          const SizedBox(height: 12),
+          Text(_error!, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          ElevatedButton(onPressed: _loadData, child: const Text('إعادة المحاولة')),
+        ],
+      ),
     );
   }
 }
 
-class _BottomPanel extends StatefulWidget {
-  final int itemCount;
-  final double discount;
-  final double total;
-  final ValueChanged<double> onDiscountChanged;
-  final VoidCallback? onPay;
-  final VoidCallback? onCancel;
+// ─── Product Card Widget ───
+class _ProductCard extends StatelessWidget {
+  final PosProduct product;
+  final VoidCallback onTap;
 
-  const _BottomPanel({
-    required this.itemCount, required this.discount, required this.total,
-    required this.onDiscountChanged, required this.onPay, required this.onCancel,
-  });
-
-  @override
-  State<_BottomPanel> createState() => _BottomPanelState();
-}
-
-class _BottomPanelState extends State<_BottomPanel> {
-  late final TextEditingController _discountCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _discountCtrl = TextEditingController(
-        text: widget.discount == 0 ? '0' : widget.discount.toStringAsFixed(2));
-  }
-
-  @override
-  void dispose() { _discountCtrl.dispose(); super.dispose(); }
+  const _ProductCard({required this.product, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-      decoration: const BoxDecoration(
-        color: _C.surface,
-        border: Border(top: BorderSide(color: _C.border, width: 1)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final hasStock = product.stockQty > 0;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: hasStock ? onTap : null,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _C.border),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('الأصناف: ${widget.itemCount}',
-                    style: const TextStyle(fontWeight: FontWeight.w600,
-                        fontSize: 13, color: _C.text)),
-                const SizedBox(width: 6),
-                const Icon(Icons.shopping_bag_outlined, size: 18, color: _C.textSecondary),
-              ]),
+              Expanded(
+                child: Text(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _C.text),
+                ),
+              ),
+              const SizedBox(height: 4),
               Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('الخصم',
-                      style: TextStyle(fontSize: 13, color: _C.text)),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 60, height: 30,
-                    child: TextField(
-                      controller: _discountCtrl,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _C.text),
-                      decoration: InputDecoration(
-                        contentPadding: EdgeInsets.zero, isDense: true,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _C.border)),
-                        enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _C.border)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-                      ),
-                      onChanged: (v) => widget.onDiscountChanged(double.tryParse(v) ?? 0),
+                  Text(
+                    '${product.defaultPrice.toStringAsFixed(2)} ج.م',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _C.primary),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: hasStock ? _C.successLight : _C.dangerLight,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      hasStock ? '${product.stockQty.toInt()} متاح' : 'نفذ',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: hasStock ? _C.success : _C.danger),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  const Text('ج.م',
-                      style: TextStyle(fontSize: 13, color: _C.text)),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('الصافي',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _C.text)),
-              Text('${widget.total.toStringAsFixed(2)} ج.م',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _C.primary)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(children: [
-            OutlinedButton.icon(
-              onPressed: widget.onCancel,
-              icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('إلغاء', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 48),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                foregroundColor: _C.textSecondary,
-                side: const BorderSide(color: _C.border),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: widget.onPay,
-                icon: const Icon(Icons.check_circle_outline, size: 20),
-                label: const Text('دفع',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 48),
-                  backgroundColor: _C.primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: _C.border,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                ),
-              ),
-            ),
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// Unit Selector — بطاقات Radio (تصميم Hesabi)
-// ============================================================
-class _UnitSelectorSheet extends StatefulWidget {
-  final PosProduct product;
-  const _UnitSelectorSheet({required this.product});
-  @override
-  State<_UnitSelectorSheet> createState() => _UnitSelectorSheetState();
-}
-
-class _UnitSelectorSheetState extends State<_UnitSelectorSheet> {
-  late PosProductUnit _selectedUnit;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedUnit = widget.product.allUnits.first;
-  }
-
-  void _submit() {
-    final price = _selectedUnit.effectivePrice(widget.product.defaultPrice);
-    final min = _selectedUnit.effectiveMin(widget.product.minPrice);
-    final max = _selectedUnit.effectiveMax(widget.product.maxPrice);
-    Navigator.pop(context, PosCartLine(
-      productId: widget.product.id,
-      productName: widget.product.name,
-      unitId: _selectedUnit.unitId,
-      unitName: _selectedUnit.unitName,
-      quantity: 1,
-      unitPrice: price,
-      minPrice: min,
-      maxPrice: max,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final units = widget.product.allUnits;
-    final currentPrice = _selectedUnit.effectivePrice(widget.product.defaultPrice);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      decoration: const BoxDecoration(
-        color: _C.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Center(child: Container(width: 44, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(2)))),
-        const SizedBox(height: 20),
-
-        Row(children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('اختر وحدة البيع',
-                    style: TextStyle(fontSize: 18,
-                        fontWeight: FontWeight.bold, color: _C.text)),
-                const SizedBox(height: 4),
-                Text('المنتج: ${widget.product.name}',
-                    style: const TextStyle(fontSize: 12.5,
-                        color: _C.textSecondary),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: _C.text),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ]),
-        const SizedBox(height: 16),
-
-        for (final u in units) ...[
-          _buildUnitCard(u, u.unitId == _selectedUnit.unitId),
-          const SizedBox(height: 10),
-        ],
-
-        const SizedBox(height: 8),
-
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: FilledButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.add_shopping_cart),
-            label: Text('إضافة للسلة (${currentPrice.toStringAsFixed(2)} ج.م)',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            style: FilledButton.styleFrom(
-              backgroundColor: _C.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-            ),
-          ),
         ),
-      ]),
-    );
-  }
-
-  Widget _buildUnitCard(PosProductUnit u, bool isSelected) {
-    final price = u.effectivePrice(widget.product.defaultPrice);
-    final isBase = u.isBase;
-
-    return Material(
-      color: isSelected ? _C.primaryLight : _C.surface,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => setState(() => _selectedUnit = u),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected ? _C.primary : _C.border,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Name + conversion (RIGHT in RTL = first child)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(u.unitName,
-                            style: const TextStyle(fontSize: 15,
-                                fontWeight: FontWeight.bold, color: _C.text)),
-                        const SizedBox(height: 3),
-                        Text(
-                          isBase
-                              ? 'الوحدة الأساسية'
-                              : 'عدد ${u.conversionFactor.toInt()} قطعة',
-                          style: const TextStyle(fontSize: 11,
-                              color: _C.textSecondary),
-                        ),
-                      ],
-                    ),
-                    // Price + label (LEFT in RTL = second child)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('${price.toStringAsFixed(2)} ج.م',
-                            style: const TextStyle(fontSize: 16,
-                                fontWeight: FontWeight.bold, color: _C.primaryDark)),
-                        const SizedBox(height: 3),
-                        Text('لل${u.unitName}',
-                            style: const TextStyle(fontSize: 11,
-                                color: _C.textSecondary)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              Radio<bool>(
-                value: true,
-                groupValue: isSelected,
-                onChanged: (_) => setState(() => _selectedUnit = u),
-                activeColor: _C.primary,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// Dialogs
-// ============================================================
-
-class _ScannerPage extends StatelessWidget {
-  const _ScannerPage();
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('مسح الباركود')),
-      body: MobileScanner(onDetect: (c) {
-        for (final b in c.barcodes) {
-          if (b.rawValue != null) { Navigator.pop(context, b.rawValue); break; }
-        }
-      }),
-    );
-  }
-}
-
-class _CustomerPickerSheet extends StatefulWidget {
-  final List<PosCustomer> customers;
-  const _CustomerPickerSheet({required this.customers});
-  @override
-  State<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
-}
-
-class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
-  String _q = '';
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _q.isEmpty ? widget.customers
-        : widget.customers.where((c) =>
-            c.name.toLowerCase().contains(_q.toLowerCase()) ||
-            (c.phone?.contains(_q) ?? false)).toList();
-    return DraggableScrollableSheet(
-      initialChildSize: 0.75, minChildSize: 0.5, maxChildSize: 0.95, expand: false,
-      builder: (context, scroll) => Container(
-        decoration: const BoxDecoration(
-          color: _C.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(children: [
-          const SizedBox(height: 8),
-          Center(child: Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2)))),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(children: [
-              const Text('اختيار العميل',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _C.text)),
-              const Spacer(),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'ابحث بالاسم أو الهاتف...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _C.border)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-                isDense: true,
-              ),
-              onChanged: (v) => setState(() => _q = v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(child: filtered.isEmpty
-            ? const Center(child: Text('لا يوجد عملاء مطابقون', style: TextStyle(color: _C.textSecondary)))
-            : ListView.separated(
-                controller: scroll, itemCount: filtered.length,
-                separatorBuilder: (_, __) => const Divider(height: 1, color: _C.border),
-                itemBuilder: (_, i) {
-                  final c = filtered[i];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _C.primaryLight,
-                      child: const Icon(Icons.person, color: _C.primary),
-                    ),
-                    title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: c.phone != null ? Text(c.phone!) : null,
-                    trailing: c.hasDebt
-                      ? Text('${c.balance.toStringAsFixed(2)} ج.م',
-                          style: const TextStyle(color: _C.danger, fontWeight: FontWeight.bold))
-                      : null,
-                    onTap: () => Navigator.pop(context, c),
-                  );
-                },
-              )),
-        ]),
-      ),
-    );
-  }
-}
-
-class _PaymentSheet extends StatefulWidget {
-  final PosRepository repository;
-  final String companyId;
-  final String companyName;
-  final List<PosCartLine> cart;
-  final PosCustomer? customer;
-  final double discount, total, customerBalance;
-  const _PaymentSheet({
-    required this.repository, required this.companyId, required this.companyName,
-    required this.cart, this.customer, required this.discount,
-    required this.total, required this.customerBalance,
-  });
-
-  @override
-  State<_PaymentSheet> createState() => _PaymentSheetState();
-}
-
-class _PaymentSheetState extends State<_PaymentSheet> {
-  late List<PaymentEntry> _payments;
-  bool _isCredit = false;
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _payments = [PaymentEntry(method: 'cash', amount: widget.total)];
-  }
-
-  double get _totalRequired => widget.total + widget.customerBalance;
-  double get _totalPaid => _payments.fold(0, (s, p) => s + p.amount);
-  double get _remaining => _totalRequired - _totalPaid;
-
-  Future<void> _submit() async {
-    setState(() => _error = null);
-    if (_isCredit && widget.customer == null) {
-      setState(() => _error = 'البيع الآجل يتطلب اختيار عميل'); return;
-    }
-    if (!_isCredit) {
-      if (_payments.isEmpty) { setState(() => _error = 'أضف طريقة دفع'); return; }
-      if (_totalPaid <= 0) { setState(() => _error = 'أدخل مبلغاً أكبر من صفر'); return; }
-      if (_totalPaid > _totalRequired && widget.customer == null) {
-        setState(() => _error = 'الدفع الزائد يتطلب اختيار عميل'); return;
-      }
-    }
-
-    setState(() => _saving = true);
-    try {
-      final saleId = await widget.repository.createSale(
-        companyId: widget.companyId,
-        customerId: widget.customer?.id,
-        lines: widget.cart,
-        payments: _isCredit ? [] : _payments,
-        discount: widget.discount,
-      );
-      if (!mounted) return;
-      Navigator.pop(context, true);
-      await _showSuccessDialog(saleId);
-    } catch (e) {
-      if (mounted) setState(() { _saving = false; _error = e.toString(); });
-    }
-  }
-
-  Future<void> _showSuccessDialog(String saleId) async {
-    if (!mounted) return;
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _SuccessDialog(
-        companyName: widget.companyName,
-        cart: widget.cart,
-        payments: _isCredit ? [] : _payments,
-        customer: widget.customer,
-        discount: widget.discount,
-        subtotal: widget.total + widget.discount,
-        total: widget.total,
-        saleId: saleId,
-      ),
-    );
-  }
-
-  void _addPayment() {
-    setState(() => _payments.add(PaymentEntry(
-      method: 'cash', amount: _remaining > 0 ? _remaining : 0)));
-  }
-
-  void _removePayment(int i) {
-    setState(() {
-      _payments.removeAt(i);
-      if (_payments.isEmpty) _payments.add(const PaymentEntry(method: 'cash', amount: 0));
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.88, minChildSize: 0.5, maxChildSize: 0.95, expand: false,
-      builder: (context, scroll) => Container(
-        decoration: const BoxDecoration(
-          color: _C.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-          child: Column(children: [
-            const SizedBox(height: 8),
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(2)))),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-              child: Row(children: [
-                const Text('الدفع',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _C.text)),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, color: _C.text),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ]),
-            ),
-            Expanded(child: ListView(controller: scroll,
-                padding: const EdgeInsets.symmetric(horizontal: 20), children: [
-              _buildCustomerRow(),
-              const SizedBox(height: 14),
-              _buildTotalCard(),
-              const SizedBox(height: 16),
-              Container(
-                height: 46,
-                decoration: BoxDecoration(
-                  border: Border.all(color: _C.border),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Row(children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _isCredit = false),
-                      borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(24), right: Radius.zero),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: !_isCredit ? _C.primaryLight : Colors.transparent,
-                          borderRadius: const BorderRadius.horizontal(
-                              right: Radius.zero, left: Radius.circular(24)),
-                        ),
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.check, size: 18,
-                              color: !_isCredit ? _C.primaryDark : _C.textSecondary),
-                          const SizedBox(width: 6),
-                          Text('دفع', style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: !_isCredit ? _C.primaryDark : _C.textSecondary)),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  Container(width: 1, color: _C.border),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _isCredit = true),
-                      borderRadius: const BorderRadius.horizontal(
-                          left: Radius.zero, right: Radius.circular(24)),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _isCredit ? _C.primaryLight : Colors.transparent,
-                          borderRadius: const BorderRadius.horizontal(
-                              left: Radius.zero, right: Radius.circular(24)),
-                        ),
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.schedule, size: 18,
-                              color: _isCredit ? _C.primaryDark : _C.textSecondary),
-                          const SizedBox(width: 6),
-                          Text('آجل', style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: _isCredit ? _C.primaryDark : _C.textSecondary)),
-                        ]),
-                      ),
-                    ),
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 16),
-              if (!_isCredit) ..._buildPayments() else _buildCreditInfo(),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: _C.dangerLight,
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Row(children: [
-                    const Icon(Icons.error_outline, size: 18, color: _C.danger),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_error!,
-                        style: const TextStyle(color: _C.danger, fontSize: 12))),
-                  ]),
-                ),
-              ],
-              const SizedBox(height: 16),
-            ])),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: SizedBox(width: double.infinity, height: 54, child: FilledButton.icon(
-                onPressed: _saving ? null : _submit,
-                icon: _saving
-                  ? const SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_circle_outline, size: 22),
-                label: Text(_saving ? 'جارٍ الحفظ...' : 'إتمام البيع',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _C.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                ),
-              )),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomerRow() {
-    final c = widget.customer;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(color: _C.surfaceGray,
-          borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [
-        Icon(c != null ? Icons.person : Icons.person_outline, color: _C.primary, size: 22),
-        const SizedBox(width: 10),
-        Expanded(child: Text(c?.name ?? 'عميل نقدي',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: _C.text))),
-      ]),
-    );
-  }
-
-  Widget _buildTotalCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-      decoration: BoxDecoration(color: _C.primaryLight,
-          borderRadius: BorderRadius.circular(14)),
-      child: Column(children: [
-        const Text('الإجمالي المطلوب',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _C.primaryDark)),
-        const SizedBox(height: 8),
-        Text('${_totalRequired.toStringAsFixed(2)} ج.م',
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: _C.primaryDark)),
-        if (widget.customerBalance != 0) ...[
-          const SizedBox(height: 8),
-          Text('يشمل رصيد سابق ${widget.customerBalance.toStringAsFixed(2)} ج.م',
-              style: const TextStyle(fontSize: 11, color: _C.primaryDark)),
-        ],
-      ]),
-    );
-  }
-
-  List<Widget> _buildPayments() {
-    return [
-      const Text('طرق الدفع',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _C.text)),
-      const SizedBox(height: 10),
-      for (int i = 0; i < _payments.length; i++) ...[
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(color: _C.surfaceGray,
-              borderRadius: BorderRadius.circular(12)),
-          child: Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: _C.primaryLight,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButton<String>(
-                value: _payments[i].method,
-                underline: const SizedBox(),
-                icon: const Icon(Icons.arrow_drop_down, color: _C.primaryDark),
-                style: const TextStyle(fontWeight: FontWeight.w700,
-                    color: _C.primaryDark, fontSize: 13),
-                items: PaymentEntry.methods.map((m) => DropdownMenuItem(
-                  value: m,
-                  child: Row(children: [
-                    Icon(_methodIcon(m), size: 16, color: _C.primaryDark),
-                    const SizedBox(width: 4),
-                    Text(PaymentEntry.label(m)),
-                  ]),
-                )).toList(),
-                onChanged: (m) => setState(() => _payments[i] =
-                    PaymentEntry(method: m!, amount: _payments[i].amount)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                initialValue: _payments[i].amount.toStringAsFixed(2),
-                keyboardType: TextInputType.number, textAlign: TextAlign.center,
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                style: const TextStyle(fontWeight: FontWeight.bold,
-                    color: _C.text, fontSize: 14),
-                decoration: InputDecoration(
-                  isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  suffixText: 'ج.م',
-                  suffixStyle: const TextStyle(color: _C.textSecondary, fontSize: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _C.border)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _C.border)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _C.primary, width: 1.5)),
-                ),
-                onChanged: (v) => setState(() =>
-                    _payments[i] = PaymentEntry(method: _payments[i].method,
-                        amount: double.tryParse(v) ?? 0)),
-              ),
-            ),
-            if (_payments.length > 1)
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: _C.textSecondary),
-                padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-                onPressed: () => _removePayment(i),
-              ),
-          ]),
-        ),
-        const SizedBox(height: 8),
-      ],
-      TextButton.icon(
-        onPressed: _addPayment,
-        icon: const Icon(Icons.add, size: 18, color: _C.primary),
-        label: const Text('إضافة طريقة دفع',
-            style: TextStyle(color: _C.primary, fontWeight: FontWeight.w600, fontSize: 13)),
-      ),
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: _remaining.abs() <= 0.01 ? _C.successLight
-              : _remaining > 0 ? _C.warningLight : _C.primaryLight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: _remaining.abs() <= 0.01 ? _C.success.withOpacity(0.3)
-                : _remaining > 0 ? _C.warning.withOpacity(0.3) : _C.primary.withOpacity(0.3),
-          ),
-        ),
-        child: Row(children: [
-          Icon(
-            _remaining.abs() <= 0.01 ? Icons.check_circle
-                : _remaining > 0 ? Icons.pending_outlined : Icons.trending_up,
-            size: 20,
-            color: _remaining.abs() <= 0.01 ? _C.success
-                : _remaining > 0 ? _C.warning : _C.primary,
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(
-            _remaining.abs() <= 0.01 ? 'المدفوع مطابق للمطلوب'
-                : _remaining > 0 ? 'المتبقي' : 'زيادة (تُضاف للرصيد)',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12,
-                color: _remaining.abs() <= 0.01 ? _C.success
-                    : _remaining > 0 ? _C.warning : _C.primary),
-          )),
-          Text(_remaining.abs().toStringAsFixed(2),
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14,
-                  color: _remaining.abs() <= 0.01 ? _C.success
-                      : _remaining > 0 ? _C.warning : _C.primary)),
-        ]),
-      ),
-    ];
-  }
-
-  Widget _buildCreditInfo() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: _C.warningLight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _C.warning.withOpacity(0.3))),
-      child: Row(children: [
-        const Icon(Icons.info_outline, color: _C.warning, size: 20),
-        const SizedBox(width: 10),
-        const Expanded(child: Text(
-          'سيتم إضافة كامل قيمة الفاتورة إلى رصيد العميل.',
-          style: TextStyle(color: _C.warning, fontSize: 12.5, fontWeight: FontWeight.w600),
-        )),
-      ]),
-    );
-  }
-
-  IconData _methodIcon(String m) => {
-    'cash': Icons.payments_outlined, 'card': Icons.credit_card,
-    'instapay': Icons.phone_iphone, 'bank_transfer': Icons.account_balance_outlined,
-    'other': Icons.more_horiz,
-  }[m] ?? Icons.more_horiz;
-}
-
-class _SuccessDialog extends StatelessWidget {
-  final String companyName;
-  final List<PosCartLine> cart;
-  final List<PaymentEntry> payments;
-  final PosCustomer? customer;
-  final double discount, subtotal, total;
-  final String saleId;
-
-  const _SuccessDialog({
-    required this.companyName, required this.cart, required this.payments,
-    this.customer, required this.discount, required this.subtotal,
-    required this.total, required this.saleId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 90, height: 90,
-            decoration: const BoxDecoration(color: _C.primaryLight, shape: BoxShape.circle),
-            child: const Icon(Icons.check, size: 56, color: _C.primaryDark),
-          ),
-          const SizedBox(height: 20),
-          const Text('تم البيع بنجاح',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _C.text)),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity, height: 52,
-            child: FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('الطباعة ستُضاف قريباً')),
-                );
-              },
-              icon: const Icon(Icons.print_outlined),
-              label: const Text('طباعة الإيصال',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              style: FilledButton.styleFrom(
-                backgroundColor: _C.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: OutlinedButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('فاتورة جديدة'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 46),
-                side: const BorderSide(color: _C.border),
-                foregroundColor: _C.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
-            )),
-          ]),
-        ]),
       ),
     );
   }

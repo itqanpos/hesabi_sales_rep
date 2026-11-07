@@ -1,10 +1,30 @@
 import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../sales/data/invoice_settings_repository.dart';
+import '../../../sales/presentation/widgets/bluetooth_printer_service.dart';
+import '../../../sales/presentation/widgets/direct_invoice_printer.dart'; // Assuming we might need it, though statement is PDF only
 import '../../data/customers_repository.dart';
 import '../../domain/customer_models.dart';
+import '../widgets/statement_pdf_builder.dart';
+
+class _C {
+  static const primary = Color(0xFF00897B);
+  static const primaryDark = Color(0xFF00695C);
+  static const primaryLight = Color(0xFFE0F2F1);
+  static const success = Color(0xFF2E7D32);
+  static const successLight = Color(0xFFE8F5E9);
+  static const warning = Color(0xFFE65100);
+  static const danger = Color(0xFFC62828);
+  static const dangerLight = Color(0xFFFFEBEE);
+  static const surfaceGray = Color(0xFFF5F5F5);
+  static const border = Color(0xFFE0E0E0);
+  static const text = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF757575);
+  static const bg = Color(0xFFFAFAFA);
+}
 
 class CustomerStatementPage extends StatefulWidget {
   final String companyId;
@@ -35,11 +55,58 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
   String? _error;
   List<StatementEntry> _entries = const [];
 
+  // Printing context
+  String _companyName = 'شركة';
+  String _branchName = 'الفرع الرئيسي';
+  String _companyPhone = '';
+  InvoiceSettings _settings = InvoiceSettings.defaults();
+
   @override
   void initState() {
     super.initState();
     _repo = CustomersRepository(Supabase.instance.client);
     _load();
+    _loadCompanyInfo();
+  }
+
+  Future<void> _loadCompanyInfo() async {
+    try {
+      final client = Supabase.instance.client;
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) return;
+
+      final member = await client
+          .from('company_members')
+          .select('company_id, companies(name, phone)')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+
+      if (member != null) {
+        final company = member['companies'] as Map?;
+        _companyName = (company?['name'] as String?) ?? 'شركة';
+        _companyPhone = (company?['phone'] as String?) ?? '';
+
+        final companyId = member['company_id'] as String?;
+        if (companyId != null) {
+          final b = await client
+              .from('branches')
+              .select('name')
+              .eq('company_id', companyId)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle();
+          if (b != null) {
+            _branchName = (b['name'] as String?) ?? 'الفرع الرئيسي';
+          }
+
+          final settingsRepo = InvoiceSettingsRepository(client);
+          _settings = await settingsRepo.loadEffective(companyId);
+        }
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   (DateTime?, DateTime?) _range() {
@@ -83,13 +150,46 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
     }
   }
 
+  Future<void> _printStatement() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: _C.primary)),
+    );
+
+    try {
+      final bytes = await StatementPdfBuilder.build(
+        customerName: widget.customerName,
+        customerPhone: widget.customerPhone,
+        currentBalance: widget.customerBalance,
+        entries: _entries,
+        companyName: _companyName,
+        branchName: _branchName,
+        companyPhone: _companyPhone,
+        settings: _settings,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      
+      await Printing.layoutPdf(
+        onLayout: (_) => bytes,
+        name: 'Statement_${widget.customerName}',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل الطباعة: $e'), backgroundColor: _C.danger),
+      );
+    }
+  }
+
   double get _debitTotal => _entries
       .where((e) => e.isSale)
       .fold(0.0, (s, e) => s + (e.remaining ?? e.amount));
 
-  double get _creditTotal => _entries
-      .where((e) => e.isPayment)
-      .fold(0.0, (s, e) => s + e.amount);
+  double get _creditTotal =>
+      _entries.where((e) => e.isPayment).fold(0.0, (s, e) => s + e.amount);
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +197,18 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
       textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         backgroundColor: _C.bg,
+        appBar: AppBar(
+          backgroundColor: _C.primary,
+          foregroundColor: Colors.white,
+          title: const Text('كشف حساب', style: TextStyle(fontWeight: FontWeight.bold)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.print),
+              onPressed: _loading || _entries.isEmpty ? null : _printStatement,
+              tooltip: 'طباعة كشف الحساب',
+            ),
+          ],
+        ),
         body: Column(
           children: [
             _Header(
@@ -182,7 +294,6 @@ class _CustomerStatementPageState extends State<CustomerStatementPage> {
 }
 
 // ─── Header ─────────────────────────────────────────────────────────────────
-
 class _Header extends StatelessWidget {
   final String name;
   final String? phone;
@@ -273,7 +384,6 @@ class _Header extends StatelessWidget {
 }
 
 // ─── Filter ─────────────────────────────────────────────────────────────────
-
 class _FilterStrip extends StatelessWidget {
   final _Filter current;
   final ValueChanged<_Filter> onChanged;
@@ -321,7 +431,6 @@ class _FilterStrip extends StatelessWidget {
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────
-
 class _SummaryStrip extends StatelessWidget {
   final double debit;
   final double credit;
@@ -403,7 +512,6 @@ class _SumItem extends StatelessWidget {
 }
 
 // ─── Entry tile ─────────────────────────────────────────────────────────────
-
 class _EntryTile extends StatelessWidget {
   final StatementEntry entry;
   const _EntryTile({required this.entry});
@@ -555,20 +663,11 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-// ─── Colors ─────────────────────────────────────────────────────────────────
-
-class _C {
-  static const primary = Color(0xFF00897B);
-  static const primaryDark = Color(0xFF00695C);
-  static const primaryLight = Color(0xFFE0F2F1);
-  static const success = Color(0xFF2E7D32);
-  static const successLight = Color(0xFFE8F5E9);
-  static const warning = Color(0xFFE65100);
-  static const danger = Color(0xFFC62828);
-  static const dangerLight = Color(0xFFFFEBEE);
-  static const surfaceGray = Color(0xFFF5F5F5);
-  static const border = Color(0xFFE0E0E0);
-  static const text = Color(0xFF1A1A1A);
-  static const textSecondary = Color(0xFF757575);
-  static const bg = Color(0xFFFAFAFA);
+// ─── Helpers ────────────────────────────────────────────────────────────────
+String fmtMoney(double v) {
+  final f = NumberFormat('#,##0.00', 'en');
+  return '${f.format(v)} ج.م';
 }
+
+String fmtDate(DateTime d) => DateFormat('yyyy/MM/dd', 'en').format(d);
+String fmtDateTime(DateTime d) => DateFormat('yyyy/MM/dd HH:mm', 'en').format(d);

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../sales/data/invoice_settings_repository.dart';
 import '../../../sales/data/sales_history_repository.dart';
+import '../../../sales/domain/sales_models.dart';               // ⬅️ السطر المضاف
 import '../../../sales/presentation/widgets/invoice_printer.dart';
 import '../../data/pos_repository.dart';
 import '../../domain/pos_models.dart';
@@ -54,7 +55,6 @@ class _PosPageState extends State<PosPage> {
   String? _error;
   String _searchQuery = '';
 
-  /// ⬇️ السطر الذي يجب التركيز على حقل كميته
   String? _focusLineKey;
 
   static DateTime? _lastLoad;
@@ -162,7 +162,6 @@ class _PosPageState extends State<PosPage> {
     }).toList();
   }
 
-  // ⬇️ إضافة المنتج + ضبط focusLineKey للتركيز على الكمية
   Future<void> _addProduct(PosProduct product) async {
     final unit = await PosUnitSelectorSheet.show(context, product);
     if (unit == null) return;
@@ -181,7 +180,6 @@ class _PosPageState extends State<PosPage> {
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
 
-    // ⬇️ اطلب التركيز على السطر
     setState(() => _focusLineKey = lineKey);
   }
 
@@ -226,9 +224,6 @@ class _PosPageState extends State<PosPage> {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Success dialog — 3 خيارات: لاحقاً / مشاركة / طباعة
-  // ═══════════════════════════════════════════════════════════════════════
   Future<void> _showSuccessDialog(String saleId) async {
     final action = await showDialog<_PostSaleAction>(
       context: context,
@@ -320,6 +315,7 @@ class _PosPageState extends State<PosPage> {
     );
   }
 
+  // ⬇️ الآن `SaleDetail` معرّف (بسبب import sales_models.dart)
   Future<SaleDetail?> _loadSaleDetail(String saleId) async {
     try {
       return await _salesRepo.getSaleDetail(

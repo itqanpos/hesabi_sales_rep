@@ -8,6 +8,47 @@ import '../../data/invoice_settings_repository.dart';
 import '../../domain/sales_models.dart';
 
 class PdfInvoiceBuilder {
+  // ═══════════════════════════════════════════════════════════════════════
+  // Cache — يُحمَّل مرة واحدة فقط
+  // ═══════════════════════════════════════════════════════════════════════
+  static pw.Font? _regularFontCache;
+  static pw.Font? _boldFontCache;
+  static String? _logoUrlCache;
+  static pw.Image? _logoImageCache;
+
+  static Future<pw.Font> _loadRegularFont() async {
+    _regularFontCache ??= pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Cairo-Regular.ttf'));
+    return _regularFontCache!;
+  }
+
+  static Future<pw.Font> _loadBoldFont() async {
+    _boldFontCache ??= pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Cairo-Bold.ttf'));
+    return _boldFontCache!;
+  }
+
+  static Future<pw.Image?> _loadLogo(String? url) async {
+    if (url == null || url.trim().isEmpty) return null;
+    if (_logoUrlCache == url) return _logoImageCache;
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        _logoImageCache = pw.Image(
+          pw.MemoryImage(response.bodyBytes),
+          height: 45,
+        );
+        _logoUrlCache = url;
+        return _logoImageCache;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Build
+  // ═══════════════════════════════════════════════════════════════════════
   static Future<Uint8List> build({
     required SaleDetail sale,
     required String companyName,
@@ -16,31 +57,15 @@ class PdfInvoiceBuilder {
     required InvoiceSettings settings,
     String? repName,
   }) async {
-    final fontRegular = pw.Font.ttf(
-        await rootBundle.load('assets/fonts/Cairo-Regular.ttf'));
-    final fontBold =
-        pw.Font.ttf(await rootBundle.load('assets/fonts/Cairo-Bold.ttf'));
+    // ⬇️ استخدام Cache — بدل تحميل كل مرة
+    final fontRegular = await _loadRegularFont();
+    final fontBold = await _loadBoldFont();
+    final companyLogo = await _loadLogo(settings.logoUrl);
 
     final theme = pw.ThemeData.withFont(base: fontRegular, bold: fontBold);
 
-    // 1. تحميل اللوجو
-    pw.Image? companyLogo;
-    if (settings.logoUrl != null && settings.logoUrl!.trim().isNotEmpty) {
-      try {
-        final response = await http.get(Uri.parse(settings.logoUrl!));
-        if (response.statusCode == 200) {
-          companyLogo = pw.Image(
-            pw.MemoryImage(response.bodyBytes),
-            height: 40,
-            fit: pw.BoxFit.contain,
-          );
-        }
-      } catch (_) {}
-    }
-
-    // 2. حساب الارتفاع بشكل مرن
     final lineCount = sale.items.length;
-    final baseMm = 170.0 + (lineCount * 15.0);
+    final baseMm = 180.0 + (lineCount * 14.0);
     final pageFormat = PdfPageFormat(
       settings.paperWidthMm * PdfPageFormat.mm,
       baseMm * PdfPageFormat.mm,
@@ -55,7 +80,7 @@ class PdfInvoiceBuilder {
     document.addPage(
       pw.Page(
         pageFormat: pageFormat,
-        margin: const pw.EdgeInsets.all(6),
+        margin: const pw.EdgeInsets.all(4),
         textDirection: pw.TextDirection.rtl,
         build: (pw.Context context) => pw.Container(
           color: PdfColors.white,
@@ -95,9 +120,9 @@ class PdfInvoiceBuilder {
     return document.save();
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   التنسيق الأساسي
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Style helper
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.TextStyle _style({
     required double baseSize,
     required InvoiceSettings settings,
@@ -113,9 +138,9 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Header
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Header
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.Widget _buildHeader({
     required String title,
     required String companyName,
@@ -167,9 +192,9 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Meta Block
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Meta block
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.Widget _buildMetaBlock(
     SaleDetail sale, {
     String? repName,
@@ -181,7 +206,8 @@ class PdfInvoiceBuilder {
     final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     final minute = sale.saleDate.minute.toString().padLeft(2, '0');
     final ampm = hour >= 12 ? 'م' : 'ص';
-    final formattedDate = '$dayName $datePart - ${hour12.toString().padLeft(2, '0')}:$minute $ampm';
+    final formattedDate =
+        '$dayName $datePart - ${hour12.toString().padLeft(2, '0')}:$minute $ampm';
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -229,14 +255,13 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Items Table (معكوسة بالكامل: م على اليمين، الإجمالي على اليسار)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Items table (reversed columns)
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.Widget _buildItemsTable(
     SaleDetail sale,
     InvoiceSettings settings,
   ) {
-    // ترتيب الأعمدة من اليسار إلى اليمين (0 = أقصى اليسار، 4 = أقصى اليمين)
     final columnWidths = <int, pw.TableColumnWidth>{
       0: const pw.FlexColumnWidth(2.0), // الإجمالي (يسار)
       1: const pw.FlexColumnWidth(1.5), // السعر
@@ -251,7 +276,6 @@ class PdfInvoiceBuilder {
     }
 
     final rows = <pw.TableRow>[
-      // Header
       pw.TableRow(
         decoration: const pw.BoxDecoration(color: PdfColors.grey300),
         children: [
@@ -264,27 +288,30 @@ class PdfInvoiceBuilder {
       ),
     ];
 
-    // Data
     for (int i = 0; i < sale.items.length; i++) {
       final line = sale.items[i];
       rows.add(pw.TableRow(
         children: [
-          _cell(_money(line.lineTotal, settings), settings: settings, center: true, bold: true),
-          _cell(_money(line.unitPrice, settings), settings: settings, center: true),
-          _cell('${_formatQty(line.quantity)}\n${line.unitName}', settings: settings, center: true),
+          _cell(_money(line.lineTotal, settings),
+              settings: settings, center: true, bold: true),
+          _cell(_money(line.unitPrice, settings),
+              settings: settings, center: true),
+          _cell('${_formatQty(line.quantity)}\n${line.unitName}',
+              settings: settings, center: true),
           _cell(line.productName, settings: settings, right: true),
           _cell('${i + 1}', settings: settings, center: true),
         ],
       ));
     }
 
-    // Footer
     rows.add(pw.TableRow(
       decoration: const pw.BoxDecoration(color: PdfColors.grey100),
       children: [
-        _cell(_money(sale.total, settings), settings: settings, center: true, bold: true),
+        _cell(_money(sale.total, settings),
+            settings: settings, center: true, bold: true),
         _cell('', settings: settings),
-        _cell(_formatQty(totalQuantity), settings: settings, center: true, bold: true),
+        _cell(_formatQty(totalQuantity),
+            settings: settings, center: true, bold: true),
         _cell('المجموع الفرعي', settings: settings, bold: true, right: true),
         _cell('', settings: settings),
       ],
@@ -319,9 +346,9 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Totals
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Totals
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.Widget _buildTotalsSection(
     SaleDetail sale,
     InvoiceSettings settings,
@@ -337,14 +364,18 @@ class PdfInvoiceBuilder {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          _row('إجمالي الفاتورة', _money(sale.total, settings), settings: settings, bold: false),
+          _row('إجمالي الفاتورة', _money(sale.total, settings),
+              settings: settings, bold: false),
           _miniDivider(),
-          _row('المطلوب', _money(sale.total, settings), settings: settings, bold: true),
+          _row('المطلوب', _money(sale.total, settings),
+              settings: settings, bold: true),
           _miniDivider(),
-          _row('المدفوع', _money(sale.paidAmount, settings), settings: settings, bold: true),
+          _row('المدفوع', _money(sale.paidAmount, settings),
+              settings: settings, bold: true),
           if (remaining.abs() > 0.001) ...[
             _miniDivider(),
-            _row('المتبقي', _money(remaining, settings), settings: settings, bold: true),
+            _row('المتبقي', _money(remaining, settings),
+                settings: settings, bold: true),
           ],
         ],
       ),
@@ -380,13 +411,15 @@ class PdfInvoiceBuilder {
         child: pw.Container(height: 0.3, color: PdfColors.grey500),
       );
 
-  static pw.Widget _divider() => pw.Container(height: 0.5, color: PdfColors.grey600);
+  static pw.Widget _divider() =>
+      pw.Container(height: 0.5, color: PdfColors.grey600);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   QR & Footer
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // QR & Footer
+  // ═══════════════════════════════════════════════════════════════════════
   static pw.Widget _buildQrCode(SaleDetail sale) {
-    final data = 'INV:${sale.invoiceNumber ?? ''}|TOTAL:${sale.total.toStringAsFixed(2)}';
+    final data =
+        'INV:${sale.invoiceNumber ?? ''}|TOTAL:${sale.total.toStringAsFixed(2)}';
     return pw.Center(
       child: pw.BarcodeWidget(
         barcode: pw.Barcode.qrCode(),
@@ -407,9 +440,9 @@ class PdfInvoiceBuilder {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+  // Helpers
+  // ═══════════════════════════════════════════════════════════════════════
   static String _money(double value, InvoiceSettings settings) {
     final formatted = NumberFormat('#,##0.00', 'en').format(value);
     return settings.showCurrencySymbol ? '$formatted ج.م' : formatted;

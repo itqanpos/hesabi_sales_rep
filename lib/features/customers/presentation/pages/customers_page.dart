@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';          // ⬅️ السطر المضاف
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/customers_repository.dart';

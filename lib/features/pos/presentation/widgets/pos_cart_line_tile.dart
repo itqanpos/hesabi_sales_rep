@@ -1,88 +1,148 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class PosCartLineTile extends StatefulWidget {
-  final Map<String, dynamic> line;
-  final Function(double) onQtyChanged;
-  final Function(double) onPriceChanged;
+import '../../domain/pos_models.dart';
+
+class PosCartLineTile extends StatelessWidget {
+  final PosCartLine line;
+  final ValueChanged<double> onQuantityChanged;
   final VoidCallback onRemove;
 
-  const PosCartLineTile({super.key, required this.line, required this.onQtyChanged, required this.onPriceChanged, required this.onRemove});
-
-  @override
-  State<PosCartLineTile> createState() => _PosCartLineTileState();
-}
-
-class _PosCartLineTileState extends State<PosCartLineTile> {
-  late TextEditingController _qtyCtrl;
-  late TextEditingController _priceCtrl;
-  final _qtyFocus = FocusNode();
-  final _priceFocus = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _qtyCtrl = TextEditingController(text: widget.line['qty'].toString());
-    _priceCtrl = TextEditingController(text: widget.line['price'].toString());
-  }
-
-  @override
-  void dispose() {
-    _qtyCtrl.dispose();
-    _priceCtrl.dispose();
-    _qtyFocus.dispose();
-    _priceFocus.dispose();
-    super.dispose();
-  }
-
-  void _commitQty() {
-    final val = double.tryParse(_qtyCtrl.text);
-    if (val != null && val > 0) {
-      widget.onQtyChanged(val);
-    } else {
-      _qtyCtrl.text = widget.line['qty'].toString();
-    }
-  }
-
-  void _commitPrice() {
-    final val = double.tryParse(_priceCtrl.text);
-    final min = (widget.line['min_price'] as num?)?.toDouble();
-    final max = (widget.line['max_price'] as num?)?.toDouble();
-    
-    if (val != null && val >= 0 && (min == null || val >= min) && (max == null || val <= max)) {
-      widget.onPriceChanged(val);
-    } else {
-      _priceCtrl.text = widget.line['price'].toString();
-      if (val != null && min != null && val < min) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('أقل سعر مسموح هو $min'), backgroundColor: Colors.red));
-      }
-    }
-  }
+  const PosCartLineTile({
+    super.key,
+    required this.line,
+    required this.onQuantityChanged,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final line = widget.line;
-    final total = (line['qty'] as double) * (line['price'] as double);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _C.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 4,
-            child: Text(line['product_name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  line.productName,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: _C.danger),
+                onPressed: onRemove,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'حذف',
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          SizedBox(width: 50, height: 38, child: TextField(controller: _qtyCtrl, focusNode: _qtyFocus, textAlign: TextAlign.center, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.zero, border: OutlineInputBorder()), onSubmitted: (_) => _commitQty(), onTapOutside: (_) { _qtyFocus.unfocus(); _commitQty(); })),
-          const SizedBox(width: 4),
-          SizedBox(width: 40, child: Text(line['unit_name'], style: const TextStyle(fontSize: 11, color: Colors.grey), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 4),
-          SizedBox(width: 65, height: 38, child: TextField(controller: _priceCtrl, focusNode: _priceFocus, textAlign: TextAlign.center, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.zero, border: OutlineInputBorder()), onSubmitted: (_) => _commitPrice(), onTapOutside: (_) { _priceFocus.unfocus(); _commitPrice(); })),
-          const SizedBox(width: 6),
-          SizedBox(width: 70, child: Text(total.toStringAsFixed(2), textAlign: TextAlign.end, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13))),
-          IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: widget.onRemove),
+          const SizedBox(height: 4),
+          Text(
+            '${line.unitPrice.toStringAsFixed(2)} ج.م / ${line.unitName}',
+            style: const TextStyle(fontSize: 11, color: _C.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _QtyBtn(
+                icon: Icons.remove,
+                onTap: () => onQuantityChanged(line.quantity - 1),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 56,
+                child: TextField(
+                  textAlign: TextAlign.center,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                  ],
+                  controller: TextEditingController(
+                      text: _fmtQty(line.quantity))
+                    ..selection = TextSelection.collapsed(
+                        offset: _fmtQty(line.quantity).length),
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800),
+                  onChanged: (v) {
+                    final n = double.tryParse(v) ?? 0;
+                    if (n > 0) onQuantityChanged(n);
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              _QtyBtn(
+                icon: Icons.add,
+                onTap: () => onQuantityChanged(line.quantity + 1),
+              ),
+              const Spacer(),
+              Text(
+                '${line.lineTotal.toStringAsFixed(2)} ج.م',
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _C.primary),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
+
+  static String _fmtQty(double v) {
+    if (v == v.roundToDouble()) return v.toStringAsFixed(0);
+    return v.toStringAsFixed(2);
+  }
+}
+
+class _QtyBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _QtyBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: _C.surfaceGray,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: _C.border),
+        ),
+        child: Icon(icon, size: 16, color: _C.text),
+      ),
+    );
+  }
+}
+
+class _C {
+  static const primary = Color(0xFF00897B);
+  static const danger = Color(0xFFC62828);
+  static const surfaceGray = Color(0xFFF5F5F5);
+  static const border = Color(0xFFE0E0E0);
+  static const text = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF757575);
 }

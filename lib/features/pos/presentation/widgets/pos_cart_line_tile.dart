@@ -3,11 +3,15 @@ import 'package:flutter/services.dart';
 
 import '../../domain/pos_models.dart';
 
-class PosCartLineTile extends StatelessWidget {
+class PosCartLineTile extends StatefulWidget {
   final PosCartLine line;
   final ValueChanged<double> onQuantityChanged;
   final ValueChanged<double> onPriceChanged;
   final VoidCallback onRemove;
+
+  /// عند `true`، يُركَّز تلقائياً على حقل الكمية ثم يستدعي [onFocusConsumed]
+  final bool shouldFocus;
+  final VoidCallback? onFocusConsumed;
 
   const PosCartLineTile({
     super.key,
@@ -15,7 +19,82 @@ class PosCartLineTile extends StatelessWidget {
     required this.onQuantityChanged,
     required this.onPriceChanged,
     required this.onRemove,
+    this.shouldFocus = false,
+    this.onFocusConsumed,
   });
+
+  @override
+  State<PosCartLineTile> createState() => _PosCartLineTileState();
+}
+
+class _PosCartLineTileState extends State<PosCartLineTile> {
+  late final FocusNode _qtyFocusNode;
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _priceCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _qtyFocusNode = FocusNode();
+    final qtyText = _fmtQty(widget.line.quantity);
+    _qtyCtrl = TextEditingController(text: qtyText);
+    _qtyCtrl.selection = TextSelection.collapsed(offset: qtyText.length);
+
+    final priceText = widget.line.unitPrice.toStringAsFixed(2);
+    _priceCtrl = TextEditingController(text: priceText);
+    _priceCtrl.selection = TextSelection.collapsed(offset: priceText.length);
+
+    // ⬇️ إذا ظهر السطر لأول مرة وshouldFocus=true → ركّز
+    if (widget.shouldFocus) {
+      _requestFocus();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PosCartLineTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // مزامنة الكمية عند التغيير الخارجي (بدون تركيز)
+    if (widget.line.quantity != oldWidget.line.quantity &&
+        !_qtyFocusNode.hasFocus) {
+      final text = _fmtQty(widget.line.quantity);
+      _qtyCtrl.text = text;
+      _qtyCtrl.selection = TextSelection.collapsed(offset: text.length);
+    }
+
+    // مزامنة السعر
+    if (widget.line.unitPrice != oldWidget.line.unitPrice) {
+      final text = widget.line.unitPrice.toStringAsFixed(2);
+      _priceCtrl.text = text;
+    }
+
+    // ⬇️ عند تغيّر shouldFocus من false → true → ركّز
+    if (widget.shouldFocus && !oldWidget.shouldFocus) {
+      _requestFocus();
+    }
+  }
+
+  void _requestFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _qtyFocusNode.requestFocus();
+      // حدد كل النص — كتابة الرقم الجديد تستبدل القديم
+      _qtyCtrl.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _qtyCtrl.text.length,
+      );
+      widget.onFocusConsumed?.call();
+    });
+  }
+
+  @override
+  void dispose() {
+    _qtyFocusNode.dispose();
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,21 +108,21 @@ class PosCartLineTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // اسم المنتج (يمين — Expanded)
+          // اسم المنتج
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  line.productName,
+                  widget.line.productName,
                   style: const TextStyle(
                       fontSize: 12.5, fontWeight: FontWeight.w700),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  line.unitName,
+                  widget.line.unitName,
                   style: const TextStyle(
                       fontSize: 10, color: _C.textSecondary),
                 ),
@@ -57,21 +136,19 @@ class PosCartLineTile extends StatelessWidget {
             width: 46,
             height: 30,
             child: TextField(
+              controller: _qtyCtrl,
+              focusNode: _qtyFocusNode,
               textAlign: TextAlign.center,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
-              controller: TextEditingController(
-                  text: _fmtQty(line.quantity))
-                ..selection = TextSelection.collapsed(
-                    offset: _fmtQty(line.quantity).length),
               style: const TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w800),
               onChanged: (v) {
                 final n = double.tryParse(v) ?? 0;
-                if (n > 0) onQuantityChanged(n);
+                if (n > 0) widget.onQuantityChanged(n);
               },
               decoration: _inputDec(),
             ),
@@ -83,21 +160,18 @@ class PosCartLineTile extends StatelessWidget {
             width: 64,
             height: 30,
             child: TextField(
+              controller: _priceCtrl,
               textAlign: TextAlign.center,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
-              controller: TextEditingController(
-                  text: line.unitPrice.toStringAsFixed(2))
-                ..selection = TextSelection.collapsed(
-                    offset: line.unitPrice.toStringAsFixed(2).length),
               style: const TextStyle(
                   fontSize: 12.5, fontWeight: FontWeight.w700),
               onChanged: (v) {
                 final n = double.tryParse(v) ?? 0;
-                if (n > 0) onPriceChanged(n);
+                if (n > 0) widget.onPriceChanged(n);
               },
               decoration: _inputDec(),
             ),
@@ -108,7 +182,7 @@ class PosCartLineTile extends StatelessWidget {
           SizedBox(
             width: 66,
             child: Text(
-              '${line.lineTotal.toStringAsFixed(2)} ج.م',
+              '${widget.line.lineTotal.toStringAsFixed(2)} ج.م',
               textAlign: TextAlign.left,
               style: const TextStyle(
                   fontSize: 12.5,
@@ -118,9 +192,9 @@ class PosCartLineTile extends StatelessWidget {
           ),
           const SizedBox(width: 2),
 
-          // زر الحذف (يسار)
+          // زر الحذف
           InkWell(
-            onTap: onRemove,
+            onTap: widget.onRemove,
             borderRadius: BorderRadius.circular(4),
             child: Container(
               padding: const EdgeInsets.all(4),

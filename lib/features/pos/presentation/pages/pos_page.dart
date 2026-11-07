@@ -228,6 +228,18 @@ class _PosPageState extends State<PosPage> {
         companyId: widget.companyId,
       );
       if (!mounted) return;
+
+      // ✅ فحص null — getSaleDetail قد يُعيد null
+      if (saleDetail == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحميل الفاتورة للطباعة'),
+            backgroundColor: _C.danger,
+          ),
+        );
+        return;
+      }
+
       await InvoicePrinter.print(
         context: context,
         sale: saleDetail,

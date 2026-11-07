@@ -78,15 +78,18 @@ class _PosBottomPanelState extends State<PosBottomPanel> {
           ),
         ],
       ),
+      // ⬇️ SafeArea(bottom: true) مطلوب — لإضافة مساحة شريط الـ home indicator على iPhone
+      // ولا يتعارض مع لوحة المفاتيح لأن PosPage يمرر MediaQuery.removeViewInsets
       child: SafeArea(
         top: false,
+        bottom: true,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Row 1: الأصناف (right) + الخصم (left)
+              // ─── صف 1: الأصناف (يمين) + الخصم (يسار) ───
               Row(
                 children: [
                   const Icon(Icons.shopping_bag_outlined,
@@ -142,7 +145,8 @@ class _PosBottomPanelState extends State<PosBottomPanel> {
                 ],
               ),
               const SizedBox(height: 8),
-              // Row 2: الصافي (right) + المبلغ (left, huge green)
+
+              // ─── صف 2: الصافي (يمين) + المبلغ (يسار كبير أخضر) ───
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -167,7 +171,8 @@ class _PosBottomPanelState extends State<PosBottomPanel> {
                 ],
               ),
               const SizedBox(height: 10),
-              // Row 3: إلغاء (right) + دفع (left, wider)
+
+              // ─── صف 3: إلغاء (يمين) + دفع (يسار عريض) ───
               Row(
                 children: [
                   Expanded(

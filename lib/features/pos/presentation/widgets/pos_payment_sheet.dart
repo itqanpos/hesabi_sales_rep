@@ -17,13 +17,14 @@ class PosPaymentSheet extends StatefulWidget {
     required this.repo,
   });
 
-  static Future<bool?> show(
+  /// يُعيد `saleId` إذا نجح البيع، `null` إذا أُغلقت النافذة.
+  static Future<String?> show(
     BuildContext context, {
     required String companyId,
     required PosCartState cart,
     required PosRepository repo,
   }) {
-    return showModalBottomSheet<bool>(
+    return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -75,7 +76,6 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
   double get _settlementTotal => _customerBalance + _cartTotal;
   double get _totalPaid =>
       _payments.fold(0.0, (s, p) => s + p.amount);
-
   double get _remaining {
     final r = _cartTotal - _totalPaid;
     return r > 0 ? r : 0;
@@ -117,7 +117,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       _snack('أدخل مبلغاً أكبر من صفر', isError: true);
       return;
     }
-    if (!_isCredit && _totalPaid < _cartTotal && !widget.cart.hasCustomer) {
+    if (!_isCredit &&
+        _totalPaid < _cartTotal &&
+        !widget.cart.hasCustomer) {
       _snack('الدفع الجزئي يتطلب اختيار عميل', isError: true);
       return;
     }
@@ -132,7 +134,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                   PaymentEntry(method: p.method, amount: p.amount))
               .toList();
 
-      await widget.repo.createSale(
+      final saleId = await widget.repo.createSale(
         companyId: widget.companyId,
         customerId: widget.cart.customer?.id,
         lines: widget.cart.lines,
@@ -141,7 +143,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      Navigator.pop(context, saleId);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -190,14 +192,14 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                   children: [
                     const Text('الدفع',
                         style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800)),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800)),
                     const Spacer(),
                     IconButton(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close)),
                   ],
                 ),
-                // العميل
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -205,24 +207,27 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                       borderRadius: BorderRadius.circular(10)),
                   child: Row(
                     children: [
-                      const Icon(Icons.person, color: _C.primary, size: 20),
+                      const Icon(Icons.person,
+                          color: _C.primary, size: 20),
                       const SizedBox(width: 8),
                       Text(
                         widget.cart.customer?.name ?? 'عميل نقدي',
                         style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                // الإجماليات
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment:
+                      MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('الإجمالي المطلوب:',
                         style: TextStyle(fontSize: 14)),
-                    Text('${_settlementTotal.toStringAsFixed(2)} ج.م',
+                    Text(
+                        '${_settlementTotal.toStringAsFixed(2)} ج.م',
                         style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
@@ -230,7 +235,6 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                   ],
                 ),
                 const Divider(),
-                // Toggle Pay/Credit
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(
@@ -273,7 +277,8 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                         Expanded(
                           child: Text(
                             'سيتم إضافة كامل قيمة الفاتورة إلى رصيد العميل.',
-                            style: TextStyle(fontSize: 12, color: _C.warning),
+                            style: TextStyle(
+                                fontSize: 12, color: _C.warning),
                           ),
                         ),
                       ],
@@ -295,10 +300,12 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2.4, color: Colors.white))
+                                strokeWidth: 2.4,
+                                color: Colors.white))
                         : const Text('إتمام البيع',
                             style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w800)),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800)),
                   ),
                 ),
               ],
@@ -331,7 +338,8 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
         Expanded(
           child: TextField(
             controller: p.controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(
+                decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],
@@ -341,17 +349,19 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               isDense: true,
               suffixText: 'ج.م',
               border: OutlineInputBorder(),
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 12),
             ),
             onChanged: (v) {
-              setState(() => p.amount = double.tryParse(v) ?? 0);
+              setState(
+                  () => p.amount = double.tryParse(v) ?? 0);
             },
           ),
         ),
         if (_payments.length > 1)
           IconButton(
-            icon: const Icon(Icons.close, color: _C.danger, size: 18),
+            icon: const Icon(Icons.close,
+                color: _C.danger, size: 18),
             onPressed: () => _removePayment(i),
           ),
       ],
@@ -366,13 +376,15 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       label = 'المتبقي: ${_remaining.toStringAsFixed(2)} ج.م';
     } else if (_overpay > 0.001) {
       color = _C.success;
-      label = 'زيادة: ${_overpay.toStringAsFixed(2)} ج.م (تُضاف للرصيد)';
+      label =
+          'زيادة: ${_overpay.toStringAsFixed(2)} ج.م (تُضاف للرصيد)';
     } else {
       color = _C.success;
       label = 'المدفوع مطابق للمطلوب';
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(8),

@@ -9,12 +9,18 @@ class PosCartList extends StatelessWidget {
   final void Function(int index, double newPrice) onPriceChanged;
   final void Function(int index) onRemove;
 
+  /// مفتاح السطر الذي يجب التركيز عليه (`productId::unitId`)
+  final String? focusLineKey;
+  final VoidCallback? onFocusConsumed;
+
   const PosCartList({
     super.key,
     required this.lines,
     required this.onQuantityChanged,
     required this.onPriceChanged,
     required this.onRemove,
+    this.focusLineKey,
+    this.onFocusConsumed,
   });
 
   @override
@@ -43,12 +49,18 @@ class PosCartList extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       itemCount: lines.length,
       separatorBuilder: (_, __) => const SizedBox.shrink(),
-      itemBuilder: (_, i) => PosCartLineTile(
-        line: lines[i],
-        onQuantityChanged: (q) => onQuantityChanged(i, q),
-        onPriceChanged: (p) => onPriceChanged(i, p),
-        onRemove: () => onRemove(i),
-      ),
+      itemBuilder: (_, i) {
+        final line = lines[i];
+        return PosCartLineTile(
+          key: ValueKey(line.key),
+          line: line,
+          shouldFocus: focusLineKey == line.key,
+          onFocusConsumed: onFocusConsumed,
+          onQuantityChanged: (q) => onQuantityChanged(i, q),
+          onPriceChanged: (p) => onPriceChanged(i, p),
+          onRemove: () => onRemove(i),
+        );
+      },
     );
   }
 }

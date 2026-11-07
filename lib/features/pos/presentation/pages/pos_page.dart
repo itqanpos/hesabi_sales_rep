@@ -43,7 +43,6 @@ class _PosPageState extends State<PosPage> {
   List<PosCustomer> _customers = [];
   PosCartState? _heldCart;
 
-  // Company info for printing
   String _companyName = 'شركة';
   String _companyPhone = '';
   String _repName = '';
@@ -81,7 +80,6 @@ class _PosPageState extends State<PosPage> {
       final client = Supabase.instance.client;
       final userId = client.auth.currentUser?.id;
 
-      // Load company info (for print)
       if (userId != null) {
         final member = await client
             .from('company_members')
@@ -147,10 +145,11 @@ class _PosPageState extends State<PosPage> {
       minPrice: unit.effectiveMin(product.minPrice),
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
-    if (merged) _snack('تمت زيادة الكمية في السلة');
+    if (merged) _snack('تمت زيادة الكمية');
   }
 
   void _onQuantityChanged(int i, double q) => _cart.updateQuantity(i, q);
+  void _onPriceChanged(int i, double p) => _cart.updatePrice(i, p);
   void _onRemoveLine(int i) => _cart.removeLine(i);
   void _onDiscountChanged(double d) => _cart.setDiscount(d);
 
@@ -159,8 +158,7 @@ class _PosPageState extends State<PosPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('إلغاء الفاتورة'),
-        content:
-            const Text('هل تريد حذف جميع الأصناف من السلة؟'),
+        content: const Text('هل تريد حذف جميع الأصناف من السلة؟'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -216,9 +214,7 @@ class _PosPageState extends State<PosPage> {
         ],
       ),
     );
-    if (confirmed == true) {
-      await _printSale(saleId);
-    }
+    if (confirmed == true) await _printSale(saleId);
   }
 
   Future<void> _printSale(String saleId) async {
@@ -228,8 +224,6 @@ class _PosPageState extends State<PosPage> {
         companyId: widget.companyId,
       );
       if (!mounted) return;
-
-      // ✅ فحص null — getSaleDetail قد يُعيد null
       if (saleDetail == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -239,7 +233,6 @@ class _PosPageState extends State<PosPage> {
         );
         return;
       }
-
       await InvoicePrinter.print(
         context: context,
         sale: saleDetail,
@@ -336,9 +329,8 @@ class _PosPageState extends State<PosPage> {
                 Text(_error!, textAlign: TextAlign.center),
                 const SizedBox(height: 12),
                 ElevatedButton(
-                  onPressed: _loadData,
-                  child: const Text('إعادة المحاولة'),
-                ),
+                    onPressed: _loadData,
+                    child: const Text('إعادة المحاولة')),
               ],
             ),
           ),
@@ -350,7 +342,6 @@ class _PosPageState extends State<PosPage> {
     final filtered = _filteredProducts;
     final cart = _cart.state;
 
-    // ⬇️ resizeToAvoidBottomInset: false — لوحة المفاتيح لا ترفع الـ Bottom Panel
     return Scaffold(
       backgroundColor: _C.bg,
       resizeToAvoidBottomInset: false,
@@ -412,10 +403,9 @@ class _PosPageState extends State<PosPage> {
                 ? Column(
                     children: [
                       _sectionLabel(
-                        text: 'نتائج البحث',
-                        icon: Icons.search,
-                        accent: true,
-                      ),
+                          text: 'نتائج البحث',
+                          icon: Icons.search,
+                          accent: true),
                       Flexible(
                         flex: 2,
                         child: PosResultsList(
@@ -425,14 +415,14 @@ class _PosPageState extends State<PosPage> {
                       ),
                       _thinDivider(),
                       _sectionLabel(
-                        text: 'السلة',
-                        icon: Icons.shopping_cart_outlined,
-                      ),
+                          text: 'السلة',
+                          icon: Icons.shopping_cart_outlined),
                       Flexible(
                         flex: 3,
                         child: PosCartList(
                           lines: cart.lines,
                           onQuantityChanged: _onQuantityChanged,
+                          onPriceChanged: _onPriceChanged,
                           onRemove: _onRemoveLine,
                         ),
                       ),
@@ -441,21 +431,27 @@ class _PosPageState extends State<PosPage> {
                 : PosCartList(
                     lines: cart.lines,
                     onQuantityChanged: _onQuantityChanged,
+                    onPriceChanged: _onPriceChanged,
                     onRemove: _onRemoveLine,
                   ),
           ),
-          PosBottomPanel(
-            cart: cart,
-            onDiscountChanged: _onDiscountChanged,
-            onClearTap: _onClearCart,
-            onPayTap: _openPayment,
+          // ⬇️ إزالة viewInsets من Bottom Panel — لا تصعد مع الكيبورد
+          MediaQuery.removeViewInsets(
+            context: context,
+            removeBottom: true,
+            child: PosBottomPanel(
+              cart: cart,
+              onDiscountChanged: _onDiscountChanged,
+              onClearTap: _onClearCart,
+              onPayTap: _openPayment,
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ⬇️ مطابق لـ Hesabi: أيقونة + نص + مسافة + خط أفقي قصير
+  // Section label — خط أفقي طويل على اليمين (مطابق Hesabi)
   Widget _sectionLabel({
     required String text,
     required IconData icon,
@@ -463,11 +459,17 @@ class _PosPageState extends State<PosPage> {
   }) {
     final color = accent ? _C.primary : _C.textSecondary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
       child: Row(
         children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 6),
+          // خط أفقي طويل على اليمين (مثل Hesabi)
+          Expanded(
+            child: Container(
+              height: 1.5,
+              color: color.withOpacity(0.4),
+            ),
+          ),
+          const SizedBox(width: 8),
           Text(
             text,
             style: TextStyle(
@@ -477,15 +479,8 @@ class _PosPageState extends State<PosPage> {
               letterSpacing: 0.3,
             ),
           ),
-          const Spacer(),
-          Container(
-            width: 24,
-            height: 2,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.35),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
+          const SizedBox(width: 6),
+          Icon(icon, size: 14, color: color),
         ],
       ),
     );
@@ -498,14 +493,13 @@ class _PosPageState extends State<PosPage> {
       );
 }
 
-// ─── Customer picker sheet ─────────────────────────────────────────────────
+// Customer picker sheet
 class _CustomerPickerSheet extends StatefulWidget {
   final List<PosCustomer> customers;
   const _CustomerPickerSheet({required this.customers});
 
   @override
-  State<_CustomerPickerSheet> createState() =>
-      _CustomerPickerSheetState();
+  State<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
 }
 
 class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {

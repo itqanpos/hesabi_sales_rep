@@ -1,29 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/pos_repository.dart';
 import '../../domain/pos_models.dart';
-import '../dialogs/pos_unit_selector_sheet.dart';
-import '../dialogs/pos_payment_sheet.dart'; // سنفترض وجوده أو إنشائه
-import '../widgets/pos_scanner_page.dart'; // سنفترض وجوده
-
-class _C {
-  static const primary = Color(0xFF00897B);
-  static const primaryDark = Color(0xFF00695C);
-  static const primaryLight = Color(0xFFE0F2F1);
-  static const success = Color(0xFF2E7D32);
-  static const successLight = Color(0xFFE8F5E9);
-  static const warning = Color(0xFFE65100);
-  static const danger = Color(0xFFC62828);
-  static const dangerLight = Color(0xFFFFEBEE);
-  static const surface = Colors.white;
-  static const surfaceGray = Color(0xFFF5F5F5);
-  static const border = Color(0xFFE0E0E0);
-  static const text = Color(0xFF1A1A1A);
-  static const textSecondary = Color(0xFF757575);
-  static const bg = Color(0xFFFAFAFA);
-}
+import '../state/pos_cart_state.dart';
+import '../widgets/pos_actions_sheet.dart';
+import '../widgets/pos_bottom_panel.dart';
+import '../widgets/pos_cart_list.dart';
+import '../widgets/pos_customer_bar.dart';
+import '../widgets/pos_payment_sheet.dart';
+import '../widgets/pos_results_list.dart';
+import '../widgets/pos_search_field.dart';
+import '../widgets/pos_unit_selector_sheet.dart';
 
 class PosPage extends StatefulWidget {
   final String companyId;
@@ -41,12 +29,12 @@ class PosPage extends StatefulWidget {
 
 class _PosPageState extends State<PosPage> {
   late final PosRepository _repo;
+  final _cart = PosCartController();
   final _searchCtrl = TextEditingController();
 
-  List<PosProduct> _products = [];
+  List<PosProduct> _allProducts = [];
   List<PosCustomer> _customers = [];
-  List<PosCartLine> _cart = [];
-  PosCustomer? _selectedCustomer;
+  PosCartState? _heldCart;
 
   bool _loading = true;
   String? _error;
@@ -56,14 +44,19 @@ class _PosPageState extends State<PosPage> {
   void initState() {
     super.initState();
     _repo = PosRepository(Supabase.instance.client);
+    _cart.addListener(_onCartChanged);
     _loadData();
   }
 
   @override
   void dispose() {
+    _cart.removeListener(_onCartChanged);
+    _cart.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
+
+  void _onCartChanged() => setState(() {});
 
   Future<void> _loadData() async {
     setState(() {
@@ -71,14 +64,13 @@ class _PosPageState extends State<PosPage> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        _repo.loadProducts(companyId: widget.companyId, branchId: widget.branchId),
-        _repo.loadCustomers(companyId: widget.companyId),
-      ]);
+      final products =
+          await _repo.loadProducts(widget.companyId, widget.branchId);
+      final customers = await _repo.loadCustomers(widget.companyId);
       if (!mounted) return;
       setState(() {
-        _products = results[0] as List<PosProduct>;
-        _customers = results[1] as List<PosCustomer>;
+        _allProducts = products;
+        _customers = customers;
         _loading = false;
       });
     } catch (e) {
@@ -90,434 +82,440 @@ class _PosPageState extends State<PosPage> {
     }
   }
 
-  // ─── Cart Logic ───
-  double get _grandTotal => _cart.fold(0.0, (s, line) => s + line.lineTotal);
-  int get _totalItems => _cart.fold(0, (s, line) => s + line.quantity.toInt());
-
-  void _addToCart(PosProduct product) async {
-    final unit = await showModalBottomSheet<PosProductUnit>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => PosUnitSelectorSheet(product: product),
-    );
-    if (unit == null) return;
-
-    setState(() {
-      final existingIndex = _cart.indexWhere(
-        (l) => l.product.id == product.id && l.unit.id == unit.id,
-      );
-      if (existingIndex >= 0) {
-        _cart[existingIndex].quantity += 1;
-      } else {
-        _cart.add(PosCartLine(
-          product: product,
-          unit: unit,
-          quantity: 1,
-          unitPrice: unit.effectivePrice,
-        ));
-      }
-    });
-  }
-
-  void _removeFromCart(int index) {
-    setState(() {
-      if (_cart[index].quantity > 1) {
-        _cart[index].quantity -= 1;
-      } else {
-        _cart.removeAt(index);
-      }
-    });
-  }
-
-  // ─── UI ───
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _C.bg,
-      appBar: _buildAppBar(),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _C.primary))
-          : _error != null
-              ? _buildError()
-              : _buildBody(),
-      bottomNavigationBar: _cart.isEmpty ? null : _buildCartSummaryBar(),
-    );
-  }
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: _C.surface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      iconTheme: const IconThemeData(color: _C.text),
-      title: const Text('نقطة البيع',
-          style: TextStyle(fontWeight: FontWeight.bold, color: _C.text, fontSize: 18)),
-      actions: [
-        IconButton(
-          onPressed: () async {
-            final barcode = await Navigator.push<String>(
-              context,
-              MaterialPageRoute(builder: (_) => const PosScannerPage()),
-            );
-            if (barcode != null) {
-              _searchCtrl.text = barcode;
-              setState(() => _searchQuery = barcode);
-            }
-          },
-          icon: const Icon(Icons.qr_code_scanner, color: _C.primary),
-          tooltip: 'مسح باركود',
-        ),
-      ],
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
-        child: Container(
-          color: _C.surface,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: TextField(
-            controller: _searchCtrl,
-            decoration: InputDecoration(
-              hintText: 'ابحث بالاسم أو الباركود...',
-              prefixIcon: const Icon(Icons.search, color: _C.textSecondary),
-              filled: true,
-              fillColor: _C.surfaceGray,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            onChanged: (v) => setState(() => _searchQuery = v),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    final filteredProducts = _products.where((p) {
-      final q = _searchQuery.toLowerCase();
+  List<PosProduct> get _filteredProducts {
+    if (_searchQuery.trim().isEmpty) return const [];
+    final q = _searchQuery.trim().toLowerCase();
+    return _allProducts.where((p) {
       return p.name.toLowerCase().contains(q) ||
-          (p.barcode ?? '').contains(q) ||
+          (p.barcode ?? '').toLowerCase().contains(q) ||
           (p.sku ?? '').toLowerCase().contains(q);
     }).toList();
+  }
 
-    if (filteredProducts.isEmpty && _searchQuery.isNotEmpty) {
-      return const Center(child: Text('لا توجد نتائج مطابقة', style: TextStyle(color: _C.textSecondary)));
+  Future<void> _addProduct(PosProduct product) async {
+    final unit = await PosUnitSelectorSheet.show(context, product);
+    if (unit == null) return;
+
+    final price = unit.effectivePrice(product.defaultPrice);
+    final merged = _cart.addLine(
+      productId: product.id,
+      productName: product.name,
+      unitId: unit.unitId,
+      unitName: unit.unitName,
+      quantity: 1,
+      unitPrice: price,
+      minPrice: unit.effectiveMin(product.minPrice),
+      maxPrice: unit.effectiveMax(product.maxPrice),
+    );
+    if (merged) {
+      _snack('تمت زيادة الكمية في السلة');
     }
+  }
 
-    return Column(
-      children: [
-        _buildCustomerBar(),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 1.4,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: filteredProducts.length,
-            itemBuilder: (_, i) => _ProductCard(
-              product: filteredProducts[i],
-              onTap: () => _addToCart(filteredProducts[i]),
-            ),
+  void _onQuantityChanged(int index, double newQty) {
+    _cart.updateQuantity(index, newQty);
+  }
+
+  void _onRemoveLine(int index) {
+    _cart.removeLine(index);
+  }
+
+  void _onDiscountChanged(double discount) {
+    _cart.setDiscount(discount);
+  }
+
+  void _onClearCart() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إلغاء الفاتورة'),
+        content:
+            const Text('هل تريد حذف جميع الأصناف من السلة؟'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('تراجع')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _C.danger),
+            onPressed: () {
+              _cart.clear();
+              Navigator.pop(ctx);
+            },
+            child: const Text('نعم، إلغاء'),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCustomerBar() {
-    return InkWell(
-      onTap: _showCustomerPicker,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: _selectedCustomer != null ? _C.primaryLight : Colors.white,
-          border: const Border(bottom: BorderSide(color: _C.border)),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.person,
-              color: _selectedCustomer != null ? _C.primaryDark : _C.textSecondary,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                _selectedCustomer?.name ?? 'تحديد عميل (اختياري)',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: _selectedCustomer != null ? FontWeight.bold : FontWeight.normal,
-                  color: _selectedCustomer != null ? _C.primaryDark : _C.textSecondary,
-                ),
-              ),
-            ),
-            if (_selectedCustomer != null)
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: _C.primaryDark),
-                onPressed: () => setState(() => _selectedCustomer = null),
-              )
-            else
-              const Icon(Icons.chevron_left, color: _C.textSecondary),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCartSummaryBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: BoxDecoration(
-        color: _C.surface,
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, -4)),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            // زر عرض السلة
-            InkWell(
-              onTap: _showCartSheet,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _C.primaryLight,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _C.primary.withOpacity(0.3)),
-                ),
-                child: Column(
-                  children: [
-                    Text('$_totalItems', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _C.primaryDark)),
-                    const Text('عناصر', style: TextStyle(fontSize: 10, color: _C.primaryDark)),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // زر الدفع
-            Expanded(
-              child: SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _showPaymentSheet,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _C.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('الدفع', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text('${_grandTotal.toStringAsFixed(2)} ج.م', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
-  // ─── Sheets ───
-  void _showCustomerPicker() {
-    showModalBottomSheet(
+  Future<void> _openPayment() async {
+    final result = await PosPaymentSheet.show(
+      context,
+      companyId: widget.companyId,
+      cart: _cart.state,
+      repo: _repo,
+    );
+    if (result == true) {
+      _cart.clear();
+      _snack('✅ تم إتمام البيع بنجاح');
+    }
+  }
+
+  Future<void> _openCustomerPicker() async {
+    final picked = await showModalBottomSheet<PosCustomer>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        height: MediaQuery.of(context).size.height * 0.6,
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('اختيار عميل', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _customers.length,
-                itemBuilder: (_, i) => ListTile(
-                  title: Text(_customers[i].name),
-                  subtitle: Text(_customers[i].phone ?? ''),
-                  onTap: () {
-                    setState(() => _selectedCustomer = _customers[i]);
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _CustomerPickerSheet(customers: _customers),
+    );
+    if (picked != null) _cart.setCustomer(picked);
+  }
+
+  void _holdCart() {
+    if (_cart.state.isEmpty) return;
+    setState(() => _heldCart = _cart.state);
+    _cart.clear();
+    _snack('تم تعليق الفاتورة');
+  }
+
+  void _restoreCart() {
+    final held = _heldCart;
+    if (held == null) return;
+    _cart.restore(held);
+    setState(() => _heldCart = null);
+    _snack('تم استعادة الفاتورة');
+  }
+
+  void _openActions() {
+    PosActionsSheet.show(
+      context,
+      hasCart: _cart.state.isNotEmpty,
+      heldCart: _heldCart,
+      onHold: _holdCart,
+      onRestore: _restoreCart,
+      onReturns: () {
+        _snack('قريباً: شاشة المرتجعات');
+      },
     );
   }
 
-  void _showCartSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.7,
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+  Future<void> _openScanner() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const _SimpleScannerPage()),
+    );
+    if (result != null && result.isNotEmpty) {
+      _searchCtrl.text = result;
+      setState(() => _searchQuery = result);
+    }
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: _C.primary)),
+      );
+    }
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('نقطة البيع')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('سلة المشتريات', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: _cart.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final line = _cart[i];
-                      return ListTile(
-                        title: Text(line.product.name),
-                        subtitle: Text('${line.unitPrice.toStringAsFixed(2)} × ${line.unit.name}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline, color: _C.danger),
-                              onPressed: () {
-                                _removeFromCart(i);
-                                setModalState(() {});
-                              },
-                            ),
-                            Text('${line.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: _C.primary),
-                              onPressed: () {
-                                setState(() => line.quantity += 1);
-                                setModalState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                const Icon(Icons.error_outline,
+                    color: _C.danger, size: 48),
+                const SizedBox(height: 12),
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: _loadData,
+                  child: const Text('إعادة المحاولة'),
                 ),
               ],
             ),
-          );
-        },
-      ),
-    );
-  }
+          ),
+        ),
+      );
+    }
 
-  void _showPaymentSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => PosPaymentSheet(
-        cart: _cart,
-        customer: _selectedCustomer,
-        companyId: widget.companyId,
-        branchId: widget.branchId,
-        repo: _repo,
-        onSuccess: () {
-          setState(() {
-            _cart.clear();
-            _selectedCustomer = null;
-          });
-        },
-      ),
-    );
-  }
+    final isSearching = _searchQuery.trim().isNotEmpty;
+    final filtered = _filteredProducts;
+    final cart = _cart.state;
 
-  Widget _buildError() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return Scaffold(
+      backgroundColor: _C.bg,
+      appBar: AppBar(
+        backgroundColor: _C.surface,
+        title: const Text('نقطة البيع',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: _C.text, fontSize: 17)),
+        iconTheme: const IconThemeData(color: _C.text),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: _openActions,
+            tooltip: 'خيارات',
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _C.border),
+        ),
+      ),
+      body: Column(
         children: [
-          const Icon(Icons.error_outline, color: _C.danger, size: 48),
-          const SizedBox(height: 12),
-          Text(_error!, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          ElevatedButton(onPressed: _loadData, child: const Text('إعادة المحاولة')),
+          PosCustomerBar(
+            customer: cart.customer,
+            onTap: _openCustomerPicker,
+            onClear: () => _cart.setCustomer(null),
+          ),
+          PosSearchField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _searchQuery = v),
+            onScannerTap: _openScanner,
+            onClear: () {
+              _searchCtrl.clear();
+              setState(() => _searchQuery = '');
+            },
+          ),
+          Expanded(
+            child: isSearching
+                ? Column(
+                    children: [
+                      const _SectionLabel(
+                          label: 'نتائج البحث', accent: true),
+                      Flexible(
+                        flex: 2,
+                        child: PosResultsList(
+                          products: filtered,
+                          onProductTap: _addProduct,
+                        ),
+                      ),
+                      Container(
+                          height: 1, color: _C.border),
+                      const _SectionLabel(label: 'السلة'),
+                      Flexible(
+                        flex: 3,
+                        child: PosCartList(
+                          lines: cart.lines,
+                          onQuantityChanged: _onQuantityChanged,
+                          onRemove: _onRemoveLine,
+                        ),
+                      ),
+                    ],
+                  )
+                : PosCartList(
+                    lines: cart.lines,
+                    onQuantityChanged: _onQuantityChanged,
+                    onRemove: _onRemoveLine,
+                  ),
+          ),
+          PosBottomPanel(
+            cart: cart,
+            onDiscountChanged: _onDiscountChanged,
+            onClearTap: _onClearCart,
+            onPayTap: _openPayment,
+          ),
         ],
       ),
     );
   }
 }
 
-// ─── Product Card Widget ───
-class _ProductCard extends StatelessWidget {
-  final PosProduct product;
-  final VoidCallback onTap;
-
-  const _ProductCard({required this.product, required this.onTap});
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  final bool accent;
+  const _SectionLabel({required this.label, this.accent = false});
 
   @override
   Widget build(BuildContext context) {
-    final hasStock = product.stockQty > 0;
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: hasStock ? onTap : null,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _C.border),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  product.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _C.text),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      child: Row(
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: accent ? _C.primary : _C.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomerPickerSheet extends StatefulWidget {
+  final List<PosCustomer> customers;
+  const _CustomerPickerSheet({required this.customers});
+
+  @override
+  State<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
+}
+
+class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
+  final _ctrl = TextEditingController();
+  late List<PosCustomer> _filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.customers;
+    _ctrl.addListener(_filter);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _filter() {
+    final q = _ctrl.text.trim().toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? widget.customers
+          : widget.customers.where((c) {
+              return c.name.toLowerCase().contains(q) ||
+                  (c.phone ?? '').toLowerCase().contains(q);
+            }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: _C.border,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('اختيار عميل',
+                  style: TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w800)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                controller: _ctrl,
+                decoration: const InputDecoration(
+                  hintText: 'ابحث بالاسم أو الهاتف',
+                  prefixIcon: Icon(Icons.search),
+                  isDense: true,
+                  border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${product.defaultPrice.toStringAsFixed(2)} ج.م',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _C.primary),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: hasStock ? _C.successLight : _C.dangerLight,
-                      borderRadius: BorderRadius.circular(4),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _filtered.isEmpty
+                  ? const Center(
+                      child: Text('لا يوجد عملاء',
+                          style: TextStyle(color: _C.textSecondary)))
+                  : ListView.separated(
+                      itemCount: _filtered.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final c = _filtered[i];
+                        return ListTile(
+                          title: Text(c.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700)),
+                          subtitle:
+                              c.phone != null ? Text(c.phone!) : null,
+                          trailing: Text(
+                            '${c.balance.toStringAsFixed(2)} ج.م',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: c.balance > 0
+                                    ? _C.danger
+                                    : _C.success),
+                          ),
+                          onTap: () => Navigator.pop(context, c),
+                        );
+                      },
                     ),
-                    child: Text(
-                      hasStock ? '${product.stockQty.toInt()} متاح' : 'نفذ',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: hasStock ? _C.success : _C.danger),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+/// ماسح مبسط (بديل مؤقت لصفحة الباركود)
+class _SimpleScannerPage extends StatelessWidget {
+  const _SimpleScannerPage();
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = TextEditingController();
+    return Scaffold(
+      appBar: AppBar(title: const Text('إدخال باركود')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'الباركود',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.qr_code),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () =>
+                    Navigator.pop(context, ctrl.text.trim()),
+                child: const Text('تأكيد'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '💡 لاحقاً: كاميرا المسح عبر mobile_scanner',
+              style: TextStyle(fontSize: 11, color: _C.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _C {
+  static const primary = Color(0xFF00897B);
+  static const success = Color(0xFF2E7D32);
+  static const danger = Color(0xFFC62828);
+  static const surface = Colors.white;
+  static const border = Color(0xFFE0E0E0);
+  static const text = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF757575);
+  static const bg = Color(0xFFFAFAFA);
 }

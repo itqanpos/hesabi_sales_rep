@@ -4,7 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../../domain/sales_models.dart';
 import '../../data/sales_history_repository.dart';
-import '../widgets/invoice_printer.dart'; // للطباعة والمشاركة
+import '../../data/invoice_settings_repository.dart';
+import '../widgets/invoice_printer.dart';
 
 class _C {
   static const primary       = Color(0xFF00897B);
@@ -95,7 +96,8 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
     }
   }
 
-  double get _totalAmount => _sales.where((s) => !s.isCancelled).fold(0, (a, b) => a + b.total);
+  double get _totalAmount =>
+      _sales.where((s) => !s.isCancelled).fold(0, (a, b) => a + b.total);
   int get _validCount => _sales.where((s) => !s.isCancelled).length;
 
   Future<void> _openDetail(SaleSummary summary) async {
@@ -298,7 +300,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
 }
 
 // ============================================================
-// Sale Card (القائمة)
+// Sale Card
 // ============================================================
 class _SaleCard extends StatelessWidget {
   final SaleSummary sale;
@@ -411,7 +413,7 @@ class _SaleCard extends StatelessWidget {
 }
 
 // ============================================================
-// Sale Detail Page (تفاصيل الفاتورة)
+// Sale Detail Page
 // ============================================================
 class _SaleDetailPage extends StatefulWidget {
   final String saleId;
@@ -434,6 +436,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
   String _companyName = 'شركة';
   String _branchName = 'الفرع الرئيسي';
   String _companyPhone = '';
+  String _repName = '';
+  InvoiceSettings _settings = InvoiceSettings.defaults();
 
   @override
   void initState() {
@@ -445,30 +449,46 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
   Future<void> _loadCompanyInfo() async {
     try {
       final client = Supabase.instance.client;
-      final companyId = client.auth.currentUser?.userMetadata?['company_id']
-          as String?;
-      if (companyId == null) return;
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) return;
 
-      final c = await client
-          .from('companies')
-          .select('name, phone')
-          .eq('id', companyId)
-          .maybeSingle();
-      if (c != null) {
-        _companyName = (c['name'] as String?) ?? _companyName;
-        _companyPhone = (c['phone'] as String?) ?? '';
-      }
-
-      final b = await client
-          .from('branches')
-          .select('name')
-          .eq('company_id', companyId)
+      final member = await client
+          .from('company_members')
+          .select('company_id, companies(name, phone)')
+          .eq('user_id', userId)
           .eq('is_active', true)
           .limit(1)
           .maybeSingle();
-      if (b != null) {
-        _branchName = (b['name'] as String?) ?? _branchName;
+
+      if (member != null) {
+        final company = member['companies'] as Map?;
+        _companyName = (company?['name'] as String?) ?? 'شركة';
+        _companyPhone = (company?['phone'] as String?) ?? '';
+
+        final companyId = member['company_id'] as String?;
+        if (companyId != null) {
+          // Branches
+          final b = await client
+              .from('branches')
+              .select('name')
+              .eq('company_id', companyId)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle();
+          if (b != null) {
+            _branchName = (b['name'] as String?) ?? 'الفرع الرئيسي';
+          }
+
+          // Load invoice settings from Hesabi
+          final settingsRepo = InvoiceSettingsRepository(client);
+          _settings = await settingsRepo.load(companyId);
+        }
       }
+
+      _repName = client.auth.currentUser?.userMetadata?['full_name'] as String?
+          ?? client.auth.currentUser?.email
+          ?? '';
+
       if (mounted) setState(() {});
     } catch (_) {}
   }
@@ -494,6 +514,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
       companyName: _companyName,
       branchName: _branchName,
       companyPhone: _companyPhone,
+      settings: _settings,
+      repName: _repName,
     );
   }
 
@@ -504,6 +526,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
       companyName: _companyName,
       branchName: _branchName,
       companyPhone: _companyPhone,
+      settings: _settings,
+      repName: _repName,
     );
   }
 
@@ -548,7 +572,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // ⬇️⬇️⬇️ رأس الفاتورة (تم إضافة زر المرتجع هنا)
+        // رأس الفاتورة
         _Card(child: Column(children: [
           Row(children: [
             Container(
@@ -570,7 +594,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
                     style: const TextStyle(fontSize: 11.5, color: _C.textSecondary)),
               ],
             )),
-            // ⬇️ زر المرتجع الجديد
             OutlinedButton.icon(
               onPressed: () => _snack('قريباً: المرتجع المرتبط'),
               icon: const Icon(Icons.assignment_return_outlined, size: 16),
@@ -674,7 +697,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 20),
 
-        // الأزرار السفلية (مشاركة + طباعة)
+        // الأزرار
         Row(children: [
           Expanded(child: OutlinedButton.icon(
             onPressed: () => _share(sale),
@@ -705,9 +728,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   جدول المنتجات
-  // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildProductsTable(SaleDetail sale) {
     final totalQty = sale.items.fold<double>(0, (s, i) => s + i.quantity);
     final itemsSum = sale.items.fold<double>(0, (s, i) => s + i.lineTotal);
@@ -723,14 +743,13 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
           inside: const BorderSide(color: _C.border, width: 0.5),
         ),
         columnWidths: const {
-          0: FixedColumnWidth(26),   // م
-          1: FlexColumnWidth(),       // الصنف
-          2: FixedColumnWidth(64),    // الكمية
-          3: FixedColumnWidth(58),    // السعر
-          4: FixedColumnWidth(72),    // الإجمالي
+          0: FixedColumnWidth(26),
+          1: FlexColumnWidth(),
+          2: FixedColumnWidth(64),
+          3: FixedColumnWidth(58),
+          4: FixedColumnWidth(72),
         },
         children: [
-          // ── Header ──
           TableRow(
             decoration: BoxDecoration(color: _C.surfaceGray),
             children: [
@@ -741,7 +760,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
               _tableCell('الإجمالي', bold: true, center: true, small: true),
             ],
           ),
-          // ── Data rows ──
           for (int i = 0; i < sale.items.length; i++)
             TableRow(
               children: [
@@ -770,7 +788,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
                 ),
               ],
             ),
-          // ── Summary row ──
           TableRow(
             decoration: BoxDecoration(color: _C.surfaceGray),
             children: [

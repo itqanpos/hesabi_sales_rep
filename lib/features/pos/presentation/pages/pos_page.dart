@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../sales/data/invoice_settings_repository.dart';
+import '../../../sales/data/sales_history_repository.dart';
+import '../../../sales/presentation/widgets/invoice_printer.dart';
 import '../../data/pos_repository.dart';
 import '../../domain/pos_models.dart';
 import '../state/pos_cart_state.dart';
@@ -12,6 +15,7 @@ import '../widgets/pos_payment_sheet.dart';
 import '../widgets/pos_results_list.dart';
 import '../widgets/pos_search_field.dart';
 import '../widgets/pos_unit_selector_sheet.dart';
+import 'pos_barcode_scanner_page.dart';
 
 class PosPage extends StatefulWidget {
   final String companyId;
@@ -31,12 +35,19 @@ class PosPage extends StatefulWidget {
 
 class _PosPageState extends State<PosPage> {
   late final PosRepository _repo;
+  late final SalesHistoryRepository _salesRepo;
   final _cart = PosCartController();
   final _searchCtrl = TextEditingController();
 
   List<PosProduct> _allProducts = [];
   List<PosCustomer> _customers = [];
   PosCartState? _heldCart;
+
+  // Company info for printing
+  String _companyName = 'شركة';
+  String _companyPhone = '';
+  String _repName = '';
+  InvoiceSettings _invoiceSettings = InvoiceSettings.defaults();
 
   bool _loading = true;
   String? _error;
@@ -46,6 +57,7 @@ class _PosPageState extends State<PosPage> {
   void initState() {
     super.initState();
     _repo = PosRepository(Supabase.instance.client);
+    _salesRepo = SalesHistoryRepository(Supabase.instance.client);
     _cart.addListener(_onCartChanged);
     _loadData();
   }
@@ -66,9 +78,35 @@ class _PosPageState extends State<PosPage> {
       _error = null;
     });
     try {
+      final client = Supabase.instance.client;
+      final userId = client.auth.currentUser?.id;
+
+      // Load company info (for print)
+      if (userId != null) {
+        final member = await client
+            .from('company_members')
+            .select('companies(name, phone)')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+        final comp = member?['companies'] as Map?;
+        _companyName = (comp?['name'] as String?) ?? 'شركة';
+        _companyPhone = (comp?['phone'] as String?) ?? '';
+        _repName =
+            client.auth.currentUser?.userMetadata?['full_name'] as String? ??
+                client.auth.currentUser?.email ??
+                '';
+
+        final settingsRepo = InvoiceSettingsRepository(client);
+        _invoiceSettings =
+            await settingsRepo.loadEffective(widget.companyId);
+      }
+
       final products =
           await _repo.loadProducts(widget.companyId, widget.branchId);
       final customers = await _repo.loadCustomers(widget.companyId);
+
       if (!mounted) return;
       setState(() {
         _allProducts = products;
@@ -121,7 +159,8 @@ class _PosPageState extends State<PosPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('إلغاء الفاتورة'),
-        content: const Text('هل تريد حذف جميع الأصناف من السلة؟'),
+        content:
+            const Text('هل تريد حذف جميع الأصناف من السلة؟'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -140,15 +179,72 @@ class _PosPageState extends State<PosPage> {
   }
 
   Future<void> _openPayment() async {
-    final result = await PosPaymentSheet.show(
+    final saleId = await PosPaymentSheet.show(
       context,
       companyId: widget.companyId,
       cart: _cart.state,
       repo: _repo,
     );
-    if (result == true) {
+    if (saleId != null) {
       _cart.clear();
-      _snack('✅ تم إتمام البيع بنجاح');
+      await _showSuccessDialog(saleId);
+    }
+  }
+
+  Future<void> _showSuccessDialog(String saleId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: _C.success, size: 28),
+            SizedBox(width: 8),
+            Text('تم البيع بنجاح'),
+          ],
+        ),
+        content: const Text('هل تريد طباعة الإيصال؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('لاحقاً'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.print, size: 18),
+            label: const Text('طباعة'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _printSale(saleId);
+    }
+  }
+
+  Future<void> _printSale(String saleId) async {
+    try {
+      final saleDetail = await _salesRepo.getSaleDetail(
+        saleId: saleId,
+        companyId: widget.companyId,
+      );
+      if (!mounted) return;
+      await InvoicePrinter.print(
+        context: context,
+        sale: saleDetail,
+        companyName: _companyName,
+        branchName: widget.branchName ?? 'الفرع الرئيسي',
+        companyPhone: _companyPhone,
+        settings: _invoiceSettings,
+        repName: _repName,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشلت الطباعة: $e'),
+          backgroundColor: _C.danger,
+        ),
+      );
     }
   }
 
@@ -191,7 +287,9 @@ class _PosPageState extends State<PosPage> {
   Future<void> _openScanner() async {
     final result = await Navigator.push<String>(
       context,
-      MaterialPageRoute(builder: (_) => const _SimpleScannerPage()),
+      MaterialPageRoute(
+        builder: (_) => const PosBarcodeScannerPage(),
+      ),
     );
     if (result != null && result.isNotEmpty) {
       _searchCtrl.text = result;
@@ -207,7 +305,8 @@ class _PosPageState extends State<PosPage> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: _C.primary)),
+        body: Center(
+            child: CircularProgressIndicator(color: _C.primary)),
       );
     }
     if (_error != null) {
@@ -239,8 +338,10 @@ class _PosPageState extends State<PosPage> {
     final filtered = _filteredProducts;
     final cart = _cart.state;
 
+    // ⬇️ resizeToAvoidBottomInset: false — لوحة المفاتيح لا ترفع الـ Bottom Panel
     return Scaffold(
       backgroundColor: _C.bg,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -298,8 +399,11 @@ class _PosPageState extends State<PosPage> {
             child: isSearching
                 ? Column(
                     children: [
-                      const _SectionLabel(
-                          label: 'نتائج البحث', accent: true),
+                      _sectionLabel(
+                        text: 'نتائج البحث',
+                        icon: Icons.search,
+                        accent: true,
+                      ),
                       Flexible(
                         flex: 2,
                         child: PosResultsList(
@@ -307,11 +411,11 @@ class _PosPageState extends State<PosPage> {
                           onProductTap: _addProduct,
                         ),
                       ),
-                      const Divider(
-                          height: 8,
-                          thickness: 4,
-                          color: Color(0xFFEEEEEE)),
-                      const _SectionLabel(label: 'السلة'),
+                      _thinDivider(),
+                      _sectionLabel(
+                        text: 'السلة',
+                        icon: Icons.shopping_cart_outlined,
+                      ),
                       Flexible(
                         flex: 3,
                         child: PosCartList(
@@ -338,39 +442,58 @@ class _PosPageState extends State<PosPage> {
       ),
     );
   }
-}
 
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  final bool accent;
-  const _SectionLabel({required this.label, this.accent = false});
-
-  @override
-  Widget build(BuildContext context) {
+  // ⬇️ مطابق لـ Hesabi: أيقونة + نص + مسافة + خط أفقي قصير
+  Widget _sectionLabel({
+    required String text,
+    required IconData icon,
+    bool accent = false,
+  }) {
     final color = accent ? _C.primary : _C.textSecondary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
       child: Row(
         children: [
-          Container(width: 20, height: 2, color: color),
+          Icon(icon, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: color)),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            width: 24,
+            height: 2,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Widget _thinDivider() => Container(
+        height: 1,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        color: _C.border.withOpacity(0.5),
+      );
 }
 
+// ─── Customer picker sheet ─────────────────────────────────────────────────
 class _CustomerPickerSheet extends StatefulWidget {
   final List<PosCustomer> customers;
   const _CustomerPickerSheet({required this.customers});
 
   @override
-  State<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
+  State<_CustomerPickerSheet> createState() =>
+      _CustomerPickerSheetState();
 }
 
 class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
@@ -448,15 +571,17 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
                           style: TextStyle(color: _C.textSecondary)))
                   : ListView.separated(
                       itemCount: _filtered.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final c = _filtered[i];
                         return ListTile(
                           title: Text(c.name,
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700)),
-                          subtitle:
-                              c.phone != null ? Text(c.phone!) : null,
+                          subtitle: c.phone != null
+                              ? Text(c.phone!)
+                              : null,
                           trailing: Text(
                             '${c.balance.toStringAsFixed(2)} ج.م',
                             style: TextStyle(
@@ -469,44 +594,6 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
                         );
                       },
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SimpleScannerPage extends StatelessWidget {
-  const _SimpleScannerPage();
-
-  @override
-  Widget build(BuildContext context) {
-    final ctrl = TextEditingController();
-    return Scaffold(
-      appBar: AppBar(title: const Text('إدخال باركود')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'الباركود',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.qr_code),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () =>
-                    Navigator.pop(context, ctrl.text.trim()),
-                child: const Text('تأكيد'),
-              ),
             ),
           ],
         ),

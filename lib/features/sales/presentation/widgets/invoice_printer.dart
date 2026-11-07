@@ -1,10 +1,9 @@
 import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/invoice_settings_repository.dart';
 import '../../domain/sales_models.dart';
 import 'direct_invoice_printer.dart';
 import 'invoice_pdf_builder.dart';
@@ -13,15 +12,15 @@ class InvoicePrinter {
   static const _C_primary = Color(0xFF00897B);
   static const _C_danger = Color(0xFFC62828);
 
-  /// الطباعة — توجّه تلقائياً حسب المنصة
   static Future<void> print({
     required BuildContext context,
     required SaleDetail sale,
     required String companyName,
     required String branchName,
     required String companyPhone,
+    required InvoiceSettings settings,
+    String? repName,
   }) async {
-    // Android → طباعة مباشرة عبر البلوتوث
     if (!kIsWeb && Platform.isAndroid) {
       return DirectInvoicePrinter.print(
         context: context,
@@ -31,24 +30,25 @@ class InvoicePrinter {
         companyPhone: companyPhone,
       );
     }
-
-    // Web / iOS → معاينة PDF (للاختبار)
     return _printViaPdf(
       context: context,
       sale: sale,
       companyName: companyName,
       branchName: branchName,
       companyPhone: companyPhone,
+      settings: settings,
+      repName: repName,
     );
   }
 
-  /// مشاركة الفاتورة (PDF) — يعمل على جميع المنصات
   static Future<void> share({
     required BuildContext context,
     required SaleDetail sale,
     required String companyName,
     required String branchName,
     required String companyPhone,
+    required InvoiceSettings settings,
+    String? repName,
   }) async {
     return _shareViaPdf(
       context: context,
@@ -56,12 +56,10 @@ class InvoicePrinter {
       companyName: companyName,
       branchName: branchName,
       companyPhone: companyPhone,
+      settings: settings,
+      repName: repName,
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   PDF Fallback (Web + iOS)
-  // ═══════════════════════════════════════════════════════════════════════════
 
   static Future<void> _printViaPdf({
     required BuildContext context,
@@ -69,6 +67,8 @@ class InvoicePrinter {
     required String companyName,
     required String branchName,
     required String companyPhone,
+    required InvoiceSettings settings,
+    String? repName,
   }) async {
     _showLoading(context);
     try {
@@ -77,6 +77,8 @@ class InvoicePrinter {
         companyName: companyName,
         branchName: branchName,
         companyPhone: companyPhone,
+        settings: settings,
+        repName: repName,
       );
       if (!context.mounted) return;
       Navigator.of(context).pop();
@@ -97,6 +99,8 @@ class InvoicePrinter {
     required String companyName,
     required String branchName,
     required String companyPhone,
+    required InvoiceSettings settings,
+    String? repName,
   }) async {
     _showLoading(context);
     try {
@@ -105,6 +109,8 @@ class InvoicePrinter {
         companyName: companyName,
         branchName: branchName,
         companyPhone: companyPhone,
+        settings: settings,
+        repName: repName,
       );
       if (!context.mounted) return;
       Navigator.of(context).pop();
@@ -121,10 +127,6 @@ class InvoicePrinter {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //   Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
-
   static void _showLoading(BuildContext context) {
     showDialog(
       context: context,
@@ -137,17 +139,7 @@ class InvoicePrinter {
 
   static void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: _C_danger,
-      ),
+      SnackBar(content: Text(msg), backgroundColor: _C_danger),
     );
-  }
-
-  /// إعادة تعيين الطابعة المحفوظة (للاستخدام من الإعدادات)
-  static Future<void> resetSavedPrinter() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('printer_address');
-    await prefs.remove('printer_name');
   }
 }

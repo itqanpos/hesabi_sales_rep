@@ -467,7 +467,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         final companyId = member['company_id'] as String?;
         if (companyId != null) {
-          // Branches
           final b = await client
               .from('branches')
               .select('name')
@@ -479,9 +478,9 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
             _branchName = (b['name'] as String?) ?? 'الفرع الرئيسي';
           }
 
-          // Load invoice settings from Hesabi
+          // ⬇️ تحميل الإعدادات الفعالة (Hesabi + تخصيص محلي)
           final settingsRepo = InvoiceSettingsRepository(client);
-          _settings = await settingsRepo.load(companyId);
+          _settings = await settingsRepo.loadEffective(companyId);
         }
       }
 
@@ -572,7 +571,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // رأس الفاتورة
         _Card(child: Column(children: [
           Row(children: [
             Container(
@@ -620,7 +618,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 12),
 
-        // جدول المنتجات
         _Card(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -651,7 +648,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 12),
 
-        // الإجماليات
         _Card(child: Column(children: [
           if (sale.discount > 0 || sale.taxAmount > 0) ...[
             _TotalRow(label: 'المجموع الفرعي', value: sale.subtotal),
@@ -697,7 +693,6 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
 
         const SizedBox(height: 20),
 
-        // الأزرار
         Row(children: [
           Expanded(child: OutlinedButton.icon(
             onPressed: () => _share(sale),

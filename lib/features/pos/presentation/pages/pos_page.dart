@@ -17,6 +17,8 @@ import '../widgets/pos_search_field.dart';
 import '../widgets/pos_unit_selector_sheet.dart';
 import 'pos_barcode_scanner_page.dart';
 
+enum _PostSaleAction { later, print, share }
+
 class PosPage extends StatefulWidget {
   final String companyId;
   final String branchId;
@@ -52,7 +54,9 @@ class _PosPageState extends State<PosPage> {
   String? _error;
   String _searchQuery = '';
 
-  // ⬇️ Cache في الذاكرة (5 دقائق)
+  /// ⬇️ السطر الذي يجب التركيز على حقل كميته
+  String? _focusLineKey;
+
   static DateTime? _lastLoad;
   static List<PosProduct>? _cachedProducts;
   static List<PosCustomer>? _cachedCustomers;
@@ -72,9 +76,7 @@ class _PosPageState extends State<PosPage> {
     super.dispose();
   }
 
-  // ⬇️ تحميل متوازي — كل المستقبلات تبدأ معاً، تُنتظر معاً
   Future<void> _loadData({bool force = false}) async {
-    // استخدام cache إذا حديث (< 5 دقائق)
     if (!force &&
         _lastLoad != null &&
         DateTime.now().difference(_lastLoad!).inMinutes < 5 &&
@@ -97,7 +99,6 @@ class _PosPageState extends State<PosPage> {
       final client = Supabase.instance.client;
       final userId = client.auth.currentUser?.id;
 
-      // ⬇️ بدء كل الطلبات في نفس اللحظة (Parallel)
       final productsFuture =
           _repo.loadProducts(widget.companyId, widget.branchId);
       final customersFuture = _repo.loadCustomers(widget.companyId);
@@ -115,7 +116,6 @@ class _PosPageState extends State<PosPage> {
             .maybeSingle();
       }
 
-      // ⬇️ الآن ننتظر — لكن كلها بدأت معاً
       final products = await productsFuture;
       final customers = await customersFuture;
       _invoiceSettings = await settingsFuture;
@@ -162,12 +162,15 @@ class _PosPageState extends State<PosPage> {
     }).toList();
   }
 
+  // ⬇️ إضافة المنتج + ضبط focusLineKey للتركيز على الكمية
   Future<void> _addProduct(PosProduct product) async {
     final unit = await PosUnitSelectorSheet.show(context, product);
     if (unit == null) return;
 
+    final lineKey = '${product.id}::${unit.unitId}';
     final price = unit.effectivePrice(product.defaultPrice);
-    final merged = _cart.addLine(
+
+    _cart.addLine(
       productId: product.id,
       productName: product.name,
       unitId: unit.unitId,
@@ -177,7 +180,9 @@ class _PosPageState extends State<PosPage> {
       minPrice: unit.effectiveMin(product.minPrice),
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
-    if (merged) _snack('تمت زيادة الكمية');
+
+    // ⬇️ اطلب التركيز على السطر
+    setState(() => _focusLineKey = lineKey);
   }
 
   void _onQuantityChanged(int i, double q) => _cart.updateQuantity(i, q);
@@ -221,8 +226,11 @@ class _PosPageState extends State<PosPage> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Success dialog — 3 خيارات: لاحقاً / مشاركة / طباعة
+  // ═══════════════════════════════════════════════════════════════════════
   Future<void> _showSuccessDialog(String saleId) async {
-    final confirmed = await showDialog<bool>(
+    final action = await showDialog<_PostSaleAction>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Row(
@@ -232,46 +240,95 @@ class _PosPageState extends State<PosPage> {
             Text('تم البيع بنجاح'),
           ],
         ),
-        content: const Text('هل تريد طباعة الإيصال؟'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('هل تريد طباعة أو مشاركة الإيصال؟'),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, _PostSaleAction.print),
+              icon: const Icon(Icons.print, size: 18),
+              label: const Text('طباعة الإيصال'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(ctx, _PostSaleAction.share),
+              icon: const Icon(Icons.share, size: 18),
+              label: const Text('مشاركة الفاتورة'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+                foregroundColor: _C.primary,
+                side: const BorderSide(color: _C.primary, width: 1.4),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx, _PostSaleAction.later),
             child: const Text('لاحقاً'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.print, size: 18),
-            label: const Text('طباعة'),
           ),
         ],
       ),
     );
-    if (confirmed == true) await _printSale(saleId);
+
+    if (!mounted) return;
+    if (action == _PostSaleAction.print) {
+      await _printSale(saleId);
+    } else if (action == _PostSaleAction.share) {
+      await _shareSale(saleId);
+    }
   }
 
   Future<void> _printSale(String saleId) async {
+    final saleDetail = await _loadSaleDetail(saleId);
+    if (!mounted) return;
+    if (saleDetail == null) {
+      _snack('تعذر تحميل الفاتورة للطباعة');
+      return;
+    }
+    await InvoicePrinter.print(
+      context: context,
+      sale: saleDetail,
+      companyName: _companyName,
+      branchName: widget.branchName ?? 'الفرع الرئيسي',
+      companyPhone: _companyPhone,
+      settings: _invoiceSettings,
+      repName: _repName,
+    );
+  }
+
+  Future<void> _shareSale(String saleId) async {
+    final saleDetail = await _loadSaleDetail(saleId);
+    if (!mounted) return;
+    if (saleDetail == null) {
+      _snack('تعذر تحميل الفاتورة للمشاركة');
+      return;
+    }
+    await InvoicePrinter.share(
+      context: context,
+      sale: saleDetail,
+      companyName: _companyName,
+      branchName: widget.branchName ?? 'الفرع الرئيسي',
+      companyPhone: _companyPhone,
+      settings: _invoiceSettings,
+      repName: _repName,
+    );
+  }
+
+  Future<SaleDetail?> _loadSaleDetail(String saleId) async {
     try {
-      final saleDetail = await _salesRepo.getSaleDetail(
+      return await _salesRepo.getSaleDetail(
         saleId: saleId,
         companyId: widget.companyId,
       );
-      if (!mounted) return;
-      if (saleDetail == null) {
-        _snack('تعذر تحميل الفاتورة للطباعة');
-        return;
-      }
-      await InvoicePrinter.print(
-        context: context,
-        sale: saleDetail,
-        companyName: _companyName,
-        branchName: widget.branchName ?? 'الفرع الرئيسي',
-        companyPhone: _companyPhone,
-        settings: _invoiceSettings,
-        repName: _repName,
-      );
     } catch (e) {
-      if (!mounted) return;
-      _snack('فشلت الطباعة: $e');
+      _snack('فشل تحميل الفاتورة: $e');
+      return null;
     }
   }
 
@@ -402,7 +459,6 @@ class _PosPageState extends State<PosPage> {
       ),
       body: Column(
         children: [
-          // ⬇️ Customer bar — ValueListenableBuilder (يعيد البناء عند تغيير العميل فقط)
           ValueListenableBuilder<PosCartState>(
             valueListenable: _cart,
             builder: (_, cart, __) => PosCustomerBar(
@@ -420,7 +476,6 @@ class _PosPageState extends State<PosPage> {
               setState(() => _searchQuery = '');
             },
           ),
-          // ⬇️ Middle section — ValueListenableBuilder (يعيد البناء عند تغيير السلة فقط)
           Expanded(
             child: ValueListenableBuilder<PosCartState>(
               valueListenable: _cart,
@@ -448,6 +503,12 @@ class _PosPageState extends State<PosPage> {
                         flex: 3,
                         child: PosCartList(
                           lines: cart.lines,
+                          focusLineKey: _focusLineKey,
+                          onFocusConsumed: () {
+                            if (_focusLineKey != null) {
+                              setState(() => _focusLineKey = null);
+                            }
+                          },
                           onQuantityChanged: _onQuantityChanged,
                           onPriceChanged: _onPriceChanged,
                           onRemove: _onRemoveLine,
@@ -458,6 +519,12 @@ class _PosPageState extends State<PosPage> {
                 }
                 return PosCartList(
                   lines: cart.lines,
+                  focusLineKey: _focusLineKey,
+                  onFocusConsumed: () {
+                    if (_focusLineKey != null) {
+                      setState(() => _focusLineKey = null);
+                    }
+                  },
                   onQuantityChanged: _onQuantityChanged,
                   onPriceChanged: _onPriceChanged,
                   onRemove: _onRemoveLine,
@@ -465,7 +532,6 @@ class _PosPageState extends State<PosPage> {
               },
             ),
           ),
-          // ⬇️ Bottom Panel — ValueListenableBuilder + MediaQuery.removeViewInsets
           MediaQuery.removeViewInsets(
             context: context,
             removeBottom: true,
@@ -524,7 +590,6 @@ class _PosPageState extends State<PosPage> {
       );
 }
 
-// Customer picker sheet
 class _CustomerPickerSheet extends StatefulWidget {
   final List<PosCustomer> customers;
   const _CustomerPickerSheet({required this.customers});

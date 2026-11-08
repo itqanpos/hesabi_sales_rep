@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
+import '../../../returns/data/returns_repository.dart';
+import '../../../returns/domain/return_models.dart';
+import '../../../returns/presentation/widgets/new_return_sheet.dart';
 import '../../domain/sales_models.dart';
 import '../../data/sales_history_repository.dart';
 import '../../data/invoice_settings_repository.dart';
@@ -530,6 +533,39 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
     );
   }
 
+  Future<void> _openReturn(SaleDetail sale) async {
+    if (sale.customerId == null) {
+      _snack('الفاتورة لعميل نقدي — استخدم "مرتجع حر" من شاشة المرتجعات');
+      return;
+    }
+    final returnsRepo = ReturnsRepository(Supabase.instance.client);
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NewReturnSheet(
+        companyId: widget.companyId,
+        repo: returnsRepo,
+        initialSale: ReturnableSale(
+          id: sale.id,
+          invoiceNumber: sale.invoiceNumber ?? '—',
+          saleDate: sale.saleDate,
+          total: sale.total,
+        ),
+        initialCustomer: ReturnCustomer(
+          id: sale.customerId!,
+          name: sale.customerName,
+          phone: sale.customerPhone,
+          balance: 0, // غير مستخدم في وضع preselect
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      _snack('تم تسجيل المرتجع');
+      _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -593,7 +629,7 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
               ],
             )),
             OutlinedButton.icon(
-              onPressed: () => _snack('قريباً: المرتجع المرتبط'),
+              onPressed: () => _openReturn(sale),
               icon: const Icon(Icons.assignment_return_outlined, size: 16),
               label: const Text('مرتجع', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               style: OutlinedButton.styleFrom(

@@ -54,9 +54,9 @@ class _PosPageState extends State<PosPage> {
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
-
   String? _focusLineKey;
 
+  // Cache
   static DateTime? _lastLoad;
   static List<PosProduct>? _cachedProducts;
   static List<PosCustomer>? _cachedCustomers;
@@ -162,7 +162,7 @@ class _PosPageState extends State<PosPage> {
     }).toList();
   }
 
-  // ⬇️ التعديل: تفريغ البحث بعد الإضافة + التركيز على حقل الكمية
+  // ⬇️ إضافة المنتج + تفريغ البحث + التركيز على الكمية
   Future<void> _addProduct(PosProduct product) async {
     final unit = await PosUnitSelectorSheet.show(context, product);
     if (unit == null) return;
@@ -181,7 +181,6 @@ class _PosPageState extends State<PosPage> {
       maxPrice: unit.effectiveMax(product.maxPrice),
     );
 
-    // ✅ تفريغ البحث + التركيز على حقل الكمية
     _searchCtrl.clear();
     setState(() {
       _searchQuery = '';
@@ -217,20 +216,24 @@ class _PosPageState extends State<PosPage> {
     );
   }
 
+  // ⬇️ حفظ حالة السلة قبل التفريغ لاستخدامها في الطباعة
   Future<void> _openPayment() async {
+    final cartBeforeClear = _cart.state;
+
     final saleId = await PosPaymentSheet.show(
       context,
       companyId: widget.companyId,
-      cart: _cart.state,
+      cart: cartBeforeClear,
       repo: _repo,
     );
     if (saleId != null) {
       _cart.clear();
-      await _showSuccessDialog(saleId);
+      await _showSuccessDialog(saleId, cartBeforeClear);
     }
   }
 
-  Future<void> _showSuccessDialog(String saleId) async {
+  Future<void> _showSuccessDialog(
+      String saleId, PosCartState cartBeforeClear) async {
     final action = await showDialog<_PostSaleAction>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -279,57 +282,84 @@ class _PosPageState extends State<PosPage> {
 
     if (!mounted) return;
     if (action == _PostSaleAction.print) {
-      await _printSale(saleId);
+      await _printSale(saleId, cartBeforeClear);
     } else if (action == _PostSaleAction.share) {
-      await _shareSale(saleId);
+      await _shareSale(saleId, cartBeforeClear);
     }
   }
 
-  Future<void> _printSale(String saleId) async {
-    final saleDetail = await _loadSaleDetail(saleId);
-    if (!mounted) return;
-    if (saleDetail == null) {
-      _snack('تعذر تحميل الفاتورة للطباعة');
-      return;
-    }
-    await InvoicePrinter.print(
-      context: context,
-      sale: saleDetail,
-      companyName: _companyName,
-      branchName: widget.branchName ?? 'الفرع الرئيسي',
-      companyPhone: _companyPhone,
-      settings: _invoiceSettings,
-      repName: _repName,
-    );
-  }
-
-  Future<void> _shareSale(String saleId) async {
-    final saleDetail = await _loadSaleDetail(saleId);
-    if (!mounted) return;
-    if (saleDetail == null) {
-      _snack('تعذر تحميل الفاتورة للمشاركة');
-      return;
-    }
-    await InvoicePrinter.share(
-      context: context,
-      sale: saleDetail,
-      companyName: _companyName,
-      branchName: widget.branchName ?? 'الفرع الرئيسي',
-      companyPhone: _companyPhone,
-      settings: _invoiceSettings,
-      repName: _repName,
-    );
-  }
-
-  Future<SaleDetail?> _loadSaleDetail(String saleId) async {
+  Future<void> _printSale(String saleId, PosCartState cartBeforeClear) async {
     try {
-      return await _salesRepo.getSaleDetail(
+      final saleDetail = await _salesRepo.getSaleDetail(
         saleId: saleId,
         companyId: widget.companyId,
       );
+      if (!mounted) return;
+      if (saleDetail == null) {
+        _snack('تعذر تحميل الفاتورة للطباعة');
+        return;
+      }
+
+      // حساب الأرصدة بناءً على السلة قبل التفريغ
+      final prevBal = cartBeforeClear.hasCustomer
+          ? cartBeforeClear.customerBalance
+          : null;
+      final newBal = prevBal != null
+          ? (prevBal + saleDetail.total) - saleDetail.paidAmount
+          : null;
+
+      await InvoicePrinter.print(
+        context: context,
+        sale: saleDetail,
+        companyName: _companyName,
+        branchName: widget.branchName ?? 'الفرع الرئيسي',
+        companyPhone: _companyPhone,
+        settings: _invoiceSettings,
+        repName: _repName,
+        previousBalance: prevBal,
+        newBalance: newBal,
+        customerAddress: null, // يمكن إضافته لاحقاً
+        payments: null, // يمكن إضافته لاحقاً إذا احتجنا تفصيل الدفع
+      );
     } catch (e) {
-      _snack('فشل تحميل الفاتورة: $e');
-      return null;
+      if (!mounted) return;
+      _snack('فشلت الطباعة: $e');
+    }
+  }
+
+  Future<void> _shareSale(String saleId, PosCartState cartBeforeClear) async {
+    try {
+      final saleDetail = await _salesRepo.getSaleDetail(
+        saleId: saleId,
+        companyId: widget.companyId,
+      );
+      if (!mounted) return;
+      if (saleDetail == null) {
+        _snack('تعذر تحميل الفاتورة للمشاركة');
+        return;
+      }
+
+      final prevBal = cartBeforeClear.hasCustomer
+          ? cartBeforeClear.customerBalance
+          : null;
+      final newBal = prevBal != null
+          ? (prevBal + saleDetail.total) - saleDetail.paidAmount
+          : null;
+
+      await InvoicePrinter.share(
+        context: context,
+        sale: saleDetail,
+        companyName: _companyName,
+        branchName: widget.branchName ?? 'الفرع الرئيسي',
+        companyPhone: _companyPhone,
+        settings: _invoiceSettings,
+        repName: _repName,
+        previousBalance: prevBal,
+        newBalance: newBal,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack('فشلت المشاركة: $e');
     }
   }
 

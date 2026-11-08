@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../returns/data/returns_repository.dart';
+import '../../../returns/presentation/widgets/new_return_sheet.dart';
 import '../../../sales/data/invoice_settings_repository.dart';
 import '../../../sales/data/sales_history_repository.dart';
 import '../../../sales/domain/sales_models.dart';
@@ -395,8 +397,26 @@ class _PosPageState extends State<PosPage> {
       heldCart: _heldCart,
       onHold: _holdCart,
       onRestore: _restoreCart,
-      onReturns: () => _snack('قريباً: المرتجعات'),
+      onReturns: _openReturns,
     );
+  }
+
+  Future<void> _openReturns() async {
+    final returnsRepo = ReturnsRepository(Supabase.instance.client);
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NewReturnSheet(
+        companyId: widget.companyId,
+        repo: returnsRepo,
+      ),
+    );
+    if (result == true && mounted) {
+      _snack('تم تسجيل المرتجع بنجاح');
+      // المرتجع يعدّل customers.balance + كميات المخزون → كسِر الـ cache
+      _loadData(force: true);
+    }
   }
 
   Future<void> _openScanner() async {

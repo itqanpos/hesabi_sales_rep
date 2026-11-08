@@ -10,10 +10,14 @@ import '../../domain/return_models.dart';
 class NewReturnSheet extends StatefulWidget {
   final String companyId;
   final ReturnsRepository repo;
+  final ReturnableSale? initialSale;
+  final ReturnCustomer? initialCustomer;
   const NewReturnSheet({
     super.key,
     required this.companyId,
     required this.repo,
+    this.initialSale,
+    this.initialCustomer,
   });
 
   @override
@@ -55,10 +59,26 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   @override
   void initState() {
     super.initState();
-    // حمّل بعض المنتجات الافتراضية عشان يكون فيه شيء للاختيار
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchProducts(query: '');
-    });
+    final initialSale = widget.initialSale;
+    final initialCustomer = widget.initialCustomer;
+
+    if (initialSale != null && initialCustomer != null) {
+      // preselect: افتح linked مباشرة على الفاتورة
+      _mode = _Mode.linked;
+      _customer = initialCustomer;
+      _selectedSale = initialSale;
+      _loadingItems = true; // يمنع وميض "لا توجد بنود"
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _pickSale(initialSale);
+      });
+    } else {
+      // الوضع الافتراضي: preload منتجات للمرتجع الحر
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _searchProducts(query: '');
+      });
+    }
   }
 
   @override
@@ -689,7 +709,6 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
       return _emptyProductState();
     }
 
-    // Show cart items filtered or all products
     final displayList = _hasSearchText
         ? _searchResults
         : _cart.map((l) => l.product).toList();
@@ -1138,7 +1157,7 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  //   LINKED MODE (unchanged)
+  //   LINKED MODE
   // ══════════════════════════════════════════════════════════════════════
 
   Widget _linkedBody() {
@@ -1210,11 +1229,14 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
           child: Row(
             children: [
               IconButton(
-                onPressed: () => setState(() {
-                  _selectedSale = null;
-                  _saleItems = const [];
-                  _returnQty.clear();
-                }),
+                onPressed: () {
+                  setState(() {
+                    _selectedSale = null;
+                    _saleItems = const [];
+                    _returnQty.clear();
+                  });
+                  if (_customer != null) _loadSales();
+                },
                 icon: const Icon(Icons.arrow_back, color: _C.text),
               ),
               Expanded(

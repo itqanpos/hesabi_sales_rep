@@ -124,7 +124,7 @@ class ReturnsRepository {
     required List<ReturnLineInput> items,
     String? notes,
   }) async {
-    final res = await _sb.rpc('create_rep_sale_return', params: {
+    final res = await _sb.rpc('create_rep_sale_return_v2', params: {
       'p_company_id': companyId,
       'p_client_uuid': const Uuid().v4(),
       'p_payload': {

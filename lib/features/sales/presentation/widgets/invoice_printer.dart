@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
+import '../../../pos/domain/pos_models.dart'; // For PaymentEntry
 import '../../data/invoice_settings_repository.dart';
 import '../../domain/sales_models.dart';
 import 'direct_invoice_printer.dart';
@@ -20,6 +21,10 @@ class InvoicePrinter {
     required String companyPhone,
     required InvoiceSettings settings,
     String? repName,
+    double? previousBalance,
+    double? newBalance,
+    List<PaymentEntry>? payments,
+    String? customerAddress,
   }) async {
     if (!kIsWeb && Platform.isAndroid) {
       return DirectInvoicePrinter.print(
@@ -40,6 +45,10 @@ class InvoicePrinter {
       companyPhone: companyPhone,
       settings: settings,
       repName: repName,
+      previousBalance: previousBalance,
+      newBalance: newBalance,
+      payments: payments,
+      customerAddress: customerAddress,
     );
   }
 
@@ -51,6 +60,10 @@ class InvoicePrinter {
     required String companyPhone,
     required InvoiceSettings settings,
     String? repName,
+    double? previousBalance,
+    double? newBalance,
+    List<PaymentEntry>? payments,
+    String? customerAddress,
   }) async {
     return _shareViaPdf(
       context: context,
@@ -60,6 +73,10 @@ class InvoicePrinter {
       companyPhone: companyPhone,
       settings: settings,
       repName: repName,
+      previousBalance: previousBalance,
+      newBalance: newBalance,
+      payments: payments,
+      customerAddress: customerAddress,
     );
   }
 
@@ -71,6 +88,10 @@ class InvoicePrinter {
     required String companyPhone,
     required InvoiceSettings settings,
     String? repName,
+    double? previousBalance,
+    double? newBalance,
+    List<PaymentEntry>? payments,
+    String? customerAddress,
   }) async {
     _showLoading(context);
     try {
@@ -81,6 +102,10 @@ class InvoicePrinter {
         companyPhone: companyPhone,
         settings: settings,
         repName: repName,
+        previousBalance: previousBalance,
+        newBalance: newBalance,
+        payments: payments,
+        customerAddress: customerAddress,
       );
       if (!context.mounted) return;
       Navigator.of(context).pop();
@@ -103,6 +128,10 @@ class InvoicePrinter {
     required String companyPhone,
     required InvoiceSettings settings,
     String? repName,
+    double? previousBalance,
+    double? newBalance,
+    List<PaymentEntry>? payments,
+    String? customerAddress,
   }) async {
     _showLoading(context);
     try {
@@ -113,6 +142,10 @@ class InvoicePrinter {
         companyPhone: companyPhone,
         settings: settings,
         repName: repName,
+        previousBalance: previousBalance,
+        newBalance: newBalance,
+        payments: payments,
+        customerAddress: customerAddress,
       );
       if (!context.mounted) return;
       Navigator.of(context).pop();

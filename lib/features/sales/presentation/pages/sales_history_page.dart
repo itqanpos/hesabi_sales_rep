@@ -434,6 +434,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
   SaleDetail? _sale;
   bool _loading = true;
   String? _error;
+  double? _previousBalance;
+  double? _newBalance;
 
   // بيانات الشركة (للطباعة)
   String _companyName = 'شركة';
@@ -496,16 +498,86 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() { _loading = true; _error = null; _previousBalance = null; _newBalance = null; });
     try {
       final sale = await widget.repository.getSaleDetail(
         saleId: widget.saleId, companyId: widget.companyId,
       );
       if (!mounted) return;
       setState(() { _sale = sale; _loading = false; });
+      if (sale != null && sale.customerId != null) {
+        _loadBalances(sale);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _loadBalances(SaleDetail sale) async {
+    if (sale.customerId == null) return;
+    try {
+      final client = Supabase.instance.client;
+      
+      // 1. الرصيد الحالي للعميل
+      final customerRow = await client
+          .from('customers')
+          .select('balance')
+          .eq('id', sale.customerId!)
+          .eq('company_id', widget.companyId)
+          .maybeSingle();
+      if (customerRow == null) return;
+      final currentBalance = (customerRow['balance'] as num?)?.toDouble() ?? 0;
+      
+      // 2. الفواتير اللاحقة
+      final laterSales = await client
+          .from('sales')
+          .select('total, paid_amount')
+          .eq('customer_id', sale.customerId!)
+          .eq('company_id', widget.companyId)
+          .gt('sale_date', sale.saleDate.toIso8601String())
+          .neq('status', 'cancelled');
+      
+      // 3. الدفعات اللاحقة
+      final laterPayments = await client
+          .from('customer_payments')
+          .select('amount')
+          .eq('customer_id', sale.customerId!)
+          .eq('company_id', widget.companyId)
+          .gt('payment_date', sale.saleDate.toIso8601String());
+          
+      // 4. المرتجعات اللاحقة (رصيد دائن)
+      final laterReturns = await client
+          .from('sale_returns')
+          .select('total')
+          .eq('customer_id', sale.customerId!)
+          .eq('company_id', widget.companyId)
+          .eq('status', 'confirmed')
+          .eq('refund_method', 'credit_note')
+          .gt('return_date', sale.saleDate.toIso8601String());
+          
+      double changeAfter = 0;
+      for (final s in laterSales) {
+        changeAfter += ((s['total'] as num?)?.toDouble() ?? 0) - ((s['paid_amount'] as num?)?.toDouble() ?? 0);
+      }
+      for (final p in laterPayments) {
+        changeAfter -= (p['amount'] as num?)?.toDouble() ?? 0;
+      }
+      for (final r in laterReturns) {
+        changeAfter -= (r['total'] as num?)?.toDouble() ?? 0;
+      }
+      
+      final newBalance = currentBalance - changeAfter;
+      final previousBalance = newBalance - (sale.total - sale.paidAmount);
+      
+      if (mounted) {
+        setState(() {
+          _previousBalance = previousBalance;
+          _newBalance = newBalance;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading balances: $e');
     }
   }
 
@@ -518,6 +590,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
       companyPhone: _companyPhone,
       settings: _settings,
       repName: _repName,
+      previousBalance: _previousBalance,
+      newBalance: _newBalance,
     );
   }
 
@@ -530,6 +604,8 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
       companyPhone: _companyPhone,
       settings: _settings,
       repName: _repName,
+      previousBalance: _previousBalance,
+      newBalance: _newBalance,
     );
   }
 
@@ -699,16 +775,43 @@ class _SaleDetailPageState extends State<_SaleDetailPage> {
             const Divider(height: 1, color: _C.border),
             const SizedBox(height: 10),
           ],
-          _TotalRow(label: 'إجمالي الفاتورة', value: sale.total,
-              bold: true, color: _C.primary, fontSize: 16),
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: _C.border),
-          const SizedBox(height: 10),
-          _TotalRow(label: 'المدفوع', value: sale.paidAmount, color: _C.success),
-          if (sale.remaining > 0.01) ...[
+          
+          // ✅ عرض التفاصيل المطابقة للإيصال
+          if (_previousBalance != null && _newBalance != null) ...[
+            _TotalRow(label: 'الرصيد السابق', value: _previousBalance!,
+                color: _previousBalance! > 0 ? _C.danger : _C.success),
             const SizedBox(height: 8),
-            _TotalRow(label: 'المتبقي', value: sale.remaining,
-                color: _C.danger, bold: true),
+            _TotalRow(label: 'المطلوب', value: _previousBalance! + sale.total,
+                color: _C.primary, bold: true),
+            const SizedBox(height: 8),
+            _TotalRow(label: 'المدفوع', value: sale.paidAmount, color: _C.success),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: _C.border),
+            const SizedBox(height: 10),
+            _TotalRow(label: 'الرصيد الجديد', value: _newBalance!,
+                color: _newBalance! > 0 ? _C.danger : _C.success, bold: true),
+            if (_newBalance! < -0.01)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('(رصيد دائن للعميل)',
+                      style: const TextStyle(fontSize: 11, color: _C.success, fontWeight: FontWeight.w600)),
+                ),
+              ),
+          ] else ...[
+            // في حال لم يتمكن من جلب الرصيد (مثلاً لعميل نقدي)، نعرض الشكل القديم
+            _TotalRow(label: 'إجمالي الفاتورة', value: sale.total,
+                bold: true, color: _C.primary, fontSize: 16),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: _C.border),
+            const SizedBox(height: 10),
+            _TotalRow(label: 'المدفوع', value: sale.paidAmount, color: _C.success),
+            if (sale.remaining > 0.01) ...[
+              const SizedBox(height: 8),
+              _TotalRow(label: 'المتبقي', value: sale.remaining,
+                  color: _C.danger, bold: true),
+            ],
           ],
         ])),
 

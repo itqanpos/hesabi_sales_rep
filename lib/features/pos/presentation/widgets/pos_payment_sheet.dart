@@ -57,9 +57,12 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
   @override
   void initState() {
     super.initState();
-    // القيمة الافتراضية = الإجمالي المطلوب (رصيد سابق + فاتورة)
+    // القيمة الافتراضية = الإجمالي المطلوب (إن كان موجبًا)، وإلا 0
     _payments = [
-      _PaymentInput(method: 'cash', amount: _settlementTotal),
+      _PaymentInput(
+        method: 'cash',
+        amount: _settlementTotal > 0 ? _settlementTotal : 0,
+      ),
     ];
   }
 
@@ -82,8 +85,11 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     return r > 0 ? r : 0;
   }
 
+  /// الزيادة تُحسب على "المطلوب الفعلي" (لا يمكن أن يكون سالبًا).
+  /// إن كان _settlementTotal <= 0، فالمطلوب = 0، والزيادة = كل المدفوع.
   double get _overpay {
-    final o = _totalPaid - _settlementTotal;
+    final required = _settlementTotal > 0 ? _settlementTotal : 0;
+    final o = _totalPaid - required;
     return o > 0 ? o : 0;
   }
 
@@ -114,10 +120,13 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       _snack('البيع الآجل يتطلب اختيار عميل', isError: true);
       return;
     }
-    if (!_isCredit && _totalPaid <= 0) {
+
+    // التحقق من "الدفع" فقط إذا كان هناك مبلغ فعلي مطلوب (> 0)
+    if (!_isCredit && _settlementTotal > 0 && _totalPaid <= 0) {
       _snack('أدخل مبلغاً أكبر من صفر', isError: true);
       return;
     }
+
     if (!_isCredit &&
         _totalPaid < _cartTotal &&
         !widget.cart.hasCustomer) {
@@ -453,7 +462,13 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     final Color color;
     final IconData icon;
     final String label;
-    if (_remaining > 0.001) {
+
+    if (_settlementTotal <= 0 && _totalPaid <= 0) {
+      // المطلوب سالب أو صفر، ولم يُدفع شيء → مغطى بالرصيد
+      color = _C.success;
+      icon = Icons.check_circle;
+      label = 'الرصيد السابق يغطي الفاتورة — لا مبلغ مطلوب';
+    } else if (_remaining > 0.001) {
       color = _C.danger;
       icon = Icons.pending_outlined;
       label = 'المتبقي: ${_remaining.toStringAsFixed(2)} ج.م';
@@ -466,6 +481,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       icon = Icons.check_circle;
       label = 'المدفوع مطابق للمطلوب';
     }
+
     return Container(
       padding:
           const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

@@ -1378,6 +1378,111 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
     );
   }
 
+  // ── Balance impact preview ────────────────────────────────────────────
+  // يعرض للمندوب قبل الحفظ: ماذا سيحدث لرصيد العميل
+
+  Widget _balancePreview() {
+    final total = _grandTotal;
+    if (total <= 0) return const SizedBox.shrink();
+
+    final isCredit = _refund == 'credit_note';
+    final cust = _customer;
+
+    // لا عميل → cash إجباري (credit_note معطّل بدون عميل)
+    if (cust == null) {
+      return _previewTile(
+        bg: _C.surfaceGray,
+        fg: _C.textSecondary,
+        icon: Icons.payments_outlined,
+        text: 'استرداد نقدي: ${_fmt(total)}',
+      );
+    }
+
+    final oldBal = cust.balance;
+
+    // ── استرداد نقدي ──
+    if (!isCredit) {
+      if (oldBal > 0) {
+        return _previewTile(
+          bg: _C.warning.withOpacity(0.08),
+          fg: _C.warning,
+          icon: Icons.warning_amber_rounded,
+          text:
+              'تنبيه: العميل مدين بـ ${_fmt(oldBal)}\nالاسترداد النقدي لن يخصم من المديونية',
+        );
+      }
+      return _previewTile(
+        bg: _C.surfaceGray,
+        fg: _C.textSecondary,
+        icon: Icons.payments_outlined,
+        text: 'استرداد نقدي: ${_fmt(total)} — لن يتغير رصيد العميل',
+      );
+    }
+
+    // ── رصيد دائن (credit_note) ──
+    final newBal = oldBal - total;
+
+    if (oldBal > 0) {
+      final becomesCredit = newBal < -0.001;
+      return _previewTile(
+        bg: becomesCredit
+            ? _C.success.withOpacity(0.08)
+            : _C.warning.withOpacity(0.08),
+        fg: becomesCredit ? _C.success : _C.warning,
+        icon: Icons.trending_down,
+        text: becomesCredit
+            ? 'خصم ${_fmt(total)} من المديونية + رصيد دائن ${_fmt(-newBal)}\n(${_fmt(oldBal)} → ${_fmt(newBal)})'
+            : 'خصم ${_fmt(total)} من المديونية: ${_fmt(oldBal)} → ${_fmt(newBal)}',
+      );
+    }
+
+    // لا مديونية → يُضاف رصيد دائن
+    return _previewTile(
+      bg: _C.success.withOpacity(0.08),
+      fg: _C.success,
+      icon: Icons.add_circle_outline,
+      text:
+          'إضافة ${_fmt(total)} رصيدًا دائنًا للعميل\n(${_fmt(oldBal)} → ${_fmt(newBal)})',
+    );
+  }
+
+  Widget _previewTile({
+    required Color bg,
+    required Color fg,
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: fg.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(icon, size: 16, color: fg),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: fg,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Shared: extras + footer ────────────────────────────────────────────
 
   Widget _footerExtras() {
@@ -1426,6 +1531,11 @@ class _NewReturnSheetState extends State<NewReturnSheet> {
               }),
             ],
           ),
+          // ⬇️ معاينة أثر الرصيد (جديد)
+          if (_grandTotal > 0) ...[
+            const SizedBox(height: 8),
+            _balancePreview(),
+          ],
           const SizedBox(height: 6),
           TextField(
             controller: _notesCtrl,
